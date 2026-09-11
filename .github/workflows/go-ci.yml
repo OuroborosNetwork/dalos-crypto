@@ -113,7 +113,7 @@ jobs:
             ["testvectors/v1_genesis.json"]="082f7a40405d4c075f1975af0a6075bb0228bbccae60a53b05b350a09ce223ae"
             ["testvectors/v1_historical.json"]="80c93f4d4956e01236808f81f518d17eeaad431f4fedb7c26233d2508f06e68b"
             ["testvectors/v1_adversarial.json"]="b9f228943106e1293c52a7e3d741520e58940b78816a2eeed7aa7332314b9d93"
-            ["testvectors/v2_rsa4096.json"]="b0573a4dc48b55f2394e68fe2a17108e7a3a4bd1dbb781d8c3230984a5470499"
+            ["testvectors/v2_rsa4096.json"]="0d074fca0f14a5ae6cbcdae571b8d2a7df78dfef12216ac9f77e5f043d751bac"
           )
 
           FAILED=0

@@ -1083,7 +1083,7 @@ func generateRSA4096() {
 	}
 
 	addVector := func(id, source, bits string, words []string) {
-		result, err := rsa4096.GenerateFromBitString(bits)
+		result, err := rsa4096.GenerateFromBitString(bits, nil)
 		must(err, fmt.Sprintf("rsa4096 %s: GenerateFromBitString", id))
 
 		if result.Key.N.BitLen() != 4096 {

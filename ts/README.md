@@ -152,9 +152,33 @@ console.log(result.jwk);      // canonical 9-field Arweave JWK (kty, n, e, d, p,
 ```
 
 Generation costs low-single-digit seconds (finding two real 2048-bit
-primes isn't cheap) — treat it as an async, off-the-main-thread
-operation with a progress indicator, the same guidance `arweave-core`
-gives for its own (non-deterministic) key generation.
+primes isn't cheap, and this runs **100** Miller-Rabin rounds per prime —
+the top of the 64-100 range the design calls for, since this is a
+one-time-per-seed operation with no per-transaction cost to amortize).
+Use `generateFromBitStringAsync` for a UI: it yields to the event loop
+periodically (same mechanism as `schnorrSignAsync`/`scalarMultiplierAsync`
+above) so a real progress bar can actually repaint while it runs:
+
+```ts
+import { generateFromBitStringAsync, type ProgressEvent } from "@ouronet/dalos-crypto/rsa4096";
+
+const bits1600 = "1".repeat(800) + "0".repeat(800);
+
+function onProgress(ev: ProgressEvent) {
+  // ev.stage is "p" or "q"; ev.overallProgress is a mathematically-honest
+  // 0..1 estimate (a memoryless-search completion probability, not a
+  // guess) suitable for driving a <progress> element directly.
+  console.log(`${ev.stage}: attempt ${ev.attempts}, ~${(ev.overallProgress * 100).toFixed(0)}%`);
+}
+
+const result = await generateFromBitStringAsync(bits1600, onProgress);
+console.log(result.address); // 43-char base64url Arweave address
+```
+
+The seed isn't hardcoded to DALOS Genesis's 1600 bits either — any
+DALOS_Crypto curve's safe-scalar bitstring works unchanged (e.g. APOLLO's
+1024 bits), since the construction has no structural opinion on seed
+length; only a 128-bit sanity floor is enforced.
 
 See [`.docs/deterministic-rsa4096-from-seed.md`](https://github.com/OuroborosNetwork/dalos-crypto/blob/main/.docs/deterministic-rsa4096-from-seed.md)
 for the full design history, empirical research, and everything checked

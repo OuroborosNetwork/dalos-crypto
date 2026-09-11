@@ -12,8 +12,19 @@ import { type Blake3XofStream, createBlake3XofStream } from '../dalos-blake3/ind
 /** Matches RSA4096/stream.go's rsa4096StreamDomainTag exactly. */
 const RSA4096_STREAM_DOMAIN_TAG = 'DALOS-gen1/RSA4096Stream/v1';
 
-/** Matches RSA4096/stream.go's seedBitStringLen (DALOS Genesis safe-scalar size). */
-export const SEED_BIT_STRING_LEN = 1600;
+/**
+ * A sanity floor, NOT a cryptographic requirement of this construction --
+ * matches RSA4096/stream.go's minSeedBitStringLen exactly. Blake3-XOF
+ * hashes an input of any length correctly; this package was originally
+ * written for DALOS Genesis's 1600-bit seed only, but the same pipeline
+ * works unchanged for any of DALOS_Crypto's other curve safe-scalar
+ * sizes -- e.g. APOLLO's 1024 bits -- since the seed is just bytes to a
+ * hash function, not something this construction interprets
+ * structurally. 128 is chosen only to catch obvious mistakes, not as a
+ * security boundary; it sits comfortably below every real curve this
+ * repo defines (LETO's 545 is the smallest).
+ */
+export const MIN_SEED_BIT_STRING_LEN = 128;
 
 const textEncoder = new TextEncoder();
 
@@ -40,12 +51,14 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 }
 
 /**
- * Validates that `s` is exactly {@link SEED_BIT_STRING_LEN} characters of
- * '0'/'1'. Matches RSA4096/stream.go's validateSeedBitString.
+ * Validates that `s` is at least {@link MIN_SEED_BIT_STRING_LEN}
+ * characters of '0'/'1'. Matches RSA4096/stream.go's
+ * validateSeedBitString exactly -- deliberately does NOT pin an exact
+ * length, see MIN_SEED_BIT_STRING_LEN's doc comment.
  */
 export function validateSeedBitString(s: string): void {
-  if (s.length !== SEED_BIT_STRING_LEN) {
-    throw new Error('seed bitstring must be exactly 1600 characters');
+  if (s.length < MIN_SEED_BIT_STRING_LEN) {
+    throw new Error('seed bitstring must be at least 128 characters');
   }
   for (const c of s) {
     if (c !== '0' && c !== '1') {
@@ -55,8 +68,10 @@ export function validateSeedBitString(s: string): void {
 }
 
 /**
- * Takes the raw DALOS 1600-bit seed bitstring and returns a
- * {@link Blake3XofStream} that produces an effectively endless, fully
+ * Takes a raw pre-EC-clamping seed bitstring -- for WHICHEVER curve
+ * produced it (DALOS Genesis's 1600 bits, APOLLO's 1024, or any other
+ * curve's safe-scalar size -- see MIN_SEED_BIT_STRING_LEN) -- and returns
+ * a {@link Blake3XofStream} that produces an effectively endless, fully
  * deterministic stream of pseudorandom-looking bytes derived from it.
  * Matches RSA4096/stream.go's NewSeedStream exactly: same domain tag, same
  * length-prefixed framing, same "hash the literal ASCII bytes of the

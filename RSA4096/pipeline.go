@@ -27,13 +27,18 @@ type KeyGenResult struct {
 // 1 through 6, plus the local half of step 8): open the seed stream, find
 // two validated primes, assemble the key, encode the JWK, derive the
 // address.
-func GenerateFromBitString(seedBitString string) (*KeyGenResult, error) {
+//
+// onProgress is optional (nil is fine) and purely observational -- see
+// progress.go. A caller building a UI progress bar passes a callback here;
+// every existing test and tool in this repo passes nil and gets byte-for-
+// byte identical output to before progress reporting existed.
+func GenerateFromBitString(seedBitString string, onProgress ProgressFunc) (*KeyGenResult, error) {
 	stream, err := NewSeedStream(seedBitString)
 	if err != nil {
 		return nil, err
 	}
 
-	p, q, pAttempts, qAttempts, err := FindTwoPrimes(stream)
+	p, q, pAttempts, qAttempts, err := FindTwoPrimes(stream, onProgress)
 	if err != nil {
 		return nil, err
 	}

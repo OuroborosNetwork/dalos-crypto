@@ -9,7 +9,8 @@
 import { modPow } from './bigint-math.js';
 import { type JWK, addressOf, toJWK } from './jwk.js';
 import { type RSAKey, assembleKey } from './keyassembly.js';
-import { findTwoPrimes } from './primesearch.js';
+import { findTwoPrimes, findTwoPrimesAsync } from './primesearch.js';
+import type { ProgressCallback } from './progress.js';
 import { newSeedStream } from './stream.js';
 
 /** Bundles everything produced by one full run of the pipeline. */
@@ -28,10 +29,48 @@ export interface KeyGenResult {
  * Runs the complete seed -> RSA-4096 JWK pipeline: open the seed stream,
  * find two validated primes, assemble the key, encode the JWK, derive the
  * address. Matches RSA4096/pipeline.go's GenerateFromBitString exactly.
+ *
+ * `onProgress` is optional and purely observational (see progress.ts) --
+ * a caller building a UI progress bar passes a callback here. Every
+ * existing test and tool that omits it gets byte-for-byte identical
+ * output to before progress reporting existed.
+ *
+ * This is the SYNCHRONOUS variant: it blocks the calling thread for the
+ * full multi-second search. In a browser, that means the UI thread (and
+ * therefore any progress bar built from `onProgress`) will NOT repaint
+ * during the search -- use {@link generateFromBitStringAsync} instead for
+ * an actual live-updating browser progress bar. This variant remains the
+ * right default for Node/server contexts where blocking is acceptable
+ * (same tradeoff already documented for `scalarMultiplier` vs
+ * `scalarMultiplierAsync` in gen1/scalar-mult.ts).
  */
-export function generateFromBitString(seedBitString: string): KeyGenResult {
+export function generateFromBitString(
+  seedBitString: string,
+  onProgress?: ProgressCallback,
+): KeyGenResult {
   const stream = newSeedStream(seedBitString);
-  const { p, q, pAttempts, qAttempts } = findTwoPrimes(stream);
+  const { p, q, pAttempts, qAttempts } = findTwoPrimes(stream, onProgress);
+  const key = assembleKey(p, q);
+  const jwk = toJWK(key);
+  const address = addressOf(key.n);
+
+  return { seed: seedBitString, p, q, key, jwk, address, pAttempts, qAttempts };
+}
+
+/**
+ * Async variant of {@link generateFromBitString}, built on
+ * {@link findTwoPrimesAsync}: yields to the event loop every 8 candidate
+ * draws (see primesearch.ts), so a browser UI thread stays responsive and
+ * an `onProgress` callback can actually drive a repainting progress bar
+ * for the full duration of the search -- this is the recommended entry
+ * point for any UI use of this package.
+ */
+export async function generateFromBitStringAsync(
+  seedBitString: string,
+  onProgress?: ProgressCallback,
+): Promise<KeyGenResult> {
+  const stream = newSeedStream(seedBitString);
+  const { p, q, pAttempts, qAttempts } = await findTwoPrimesAsync(stream, onProgress);
   const key = assembleKey(p, q);
   const jwk = toJWK(key);
   const address = addressOf(key.n);

@@ -6,6 +6,30 @@ This file captures the verbatim output of the Go validation suite against the DA
 
 ---
 
+## Run — 2026-09-11, later the same day (RSA4096: 64→100 Miller-Rabin rounds, progress API, seed-length generalization)
+
+### What changed
+
+Three pre-publish hardening changes to the RSA4096 primitive (see `.docs/deterministic-rsa4096-from-seed.md` §11 for the full reasoning): `MillerRabinRounds`/`MILLER_RABIN_ROUNDS` bumped 64→100 (one-time-per-seed operation, no per-transaction cost to amortize); a purely-observational progress-reporting API added to both languages plus a TS event-loop-yielding async variant (`generateFromBitStringAsync`) for real UI progress bars; the seed-length validation generalized from an exact 1600-bit (DALOS Genesis) requirement to a 128-bit sanity floor, confirmed working with APOLLO's 1024-bit safe scalar.
+
+### Checks
+
+| Check | Result |
+|-------|--------|
+| `v1_genesis.json` byte-identity (extended-elided) | ✅ UNCHANGED: `082f7a40405d4c075f1975af0a6075bb0228bbccae60a53b05b350a09ce223ae` |
+| `v1_historical.json` byte-identity (extended-elided) | ✅ UNCHANGED: `80c93f4d4956e01236808f81f518d17eeaad431f4fedb7c26233d2508f06e68b` |
+| `v2_rsa4096.json` byte-identity (extended-elided) | Changed as expected (round count is part of the frozen contract) — new value `0d074fca0f14a5ae6cbcdae571b8d2a7df78dfef12216ac9f77e5f043d751bac`, confirmed stable across 3 independent regenerations before re-pinning `.github/workflows/go-ci.yml`. `p_attempts` for all 3 vectors unchanged (402, 27, 138 — `p` is found before any round-count effect accumulates, exactly as predicted); `q_attempts` changed (516/1439/398, was 552/1484/432 — `q`'s search starts from a stream position shifted by `p`'s now-longer confirmation, exactly as predicted). |
+| `go test ./RSA4096/...` | ✅ 15/15 passing (11 original + 4 new: progress-purity, two curve-shape lengths, sub-floor rejection) |
+| `npm test` (TS) | ✅ 436/436 passing (up from 431 — 5 new progress/async/seed-length tests) |
+| `npm run docs:check` (ts/README.md code fences vs built dist) | ✅ 8/8 blocks pass, including a new live progress-bar example |
+| External validation (real `arweave-core` + Node WebCrypto) | ✅ All 3 (new, 100-round) vectors: `importKeyfile`/`addressOf` byte-identical, real RSA-PSS/SHA-256 sign→verify round-trip |
+
+### What this run proves
+
+Confirms the round-count change's effect on the corpus was exactly the predicted one (not a surprise, not a symptom of something else changing), confirms the seed-length relaxation didn't perturb any already-valid seed's output (the length-prefix framing already wrote actual runtime length, never a hardcoded constant, so this was expected but verified anyway), and confirms the new progress-reporting surface is genuinely inert with respect to the cryptographic output — a dedicated test compares output with and without a callback attached and asserts byte-identical results.
+
+---
+
 ## Run — 2026-09-11 (RSA4096 primitive added — new corpus, existing corpora unperturbed)
 
 ### Environment

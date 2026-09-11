@@ -15,15 +15,28 @@
  * Copyright (C) 2026 AncientHoldings GmbH. All rights reserved.
  */
 
-export { newSeedStream, validateSeedBitString, SEED_BIT_STRING_LEN } from './stream.js';
+export { newSeedStream, validateSeedBitString, MIN_SEED_BIT_STRING_LEN } from './stream.js';
 export { generateCandidate, CANDIDATE_BITS, CANDIDATE_BYTES } from './candidate.js';
 export { passesTrialDivision, SMALL_PRIME_COUNT } from './primes.js';
 export { isProbablyPrime, MILLER_RABIN_ROUNDS } from './millerrabin.js';
-export { findPrime, findTwoPrimes, PUBLIC_EXPONENT } from './primesearch.js';
+export {
+  findPrime,
+  findPrimeAsync,
+  findTwoPrimes,
+  findTwoPrimesAsync,
+  passesAuxiliaryConstraints,
+  PUBLIC_EXPONENT,
+} from './primesearch.js';
 export type { FindPrimeResult, FindTwoPrimesResult } from './primesearch.js';
+export type { ProgressCallback, ProgressEvent, ProgressStage } from './progress.js';
+export { STAGE_SEARCHING_P, STAGE_SEARCHING_Q } from './progress.js';
 export { assembleKey } from './keyassembly.js';
 export type { RSAKey } from './keyassembly.js';
 export { toJWK, addressOf, ARWEAVE_MODULUS_BYTES } from './jwk.js';
 export type { JWK } from './jwk.js';
-export { generateFromBitString, selfCheckTextbookRSA } from './pipeline.js';
+export {
+  generateFromBitString,
+  generateFromBitStringAsync,
+  selfCheckTextbookRSA,
+} from './pipeline.js';
 export type { KeyGenResult } from './pipeline.js';

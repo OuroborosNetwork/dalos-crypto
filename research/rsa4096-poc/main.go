@@ -90,7 +90,21 @@ func main() {
 	var goldenVectors []goldenVector
 	for i, v := range vectors {
 		fmt.Printf("[%d/%d] %s: regenerating via the real RSA4096 package...\n", i+1, len(vectors), v.ID)
-		result, err := rsa4096.GenerateFromBitString(v.InputBitString)
+
+		// Live demonstration of the progress-reporting API added for the
+		// UI progress-bar use case: print an update every 100 draws so a
+		// human watching this harness run can see it working, not just
+		// take the doc comment's word for it.
+		lastPrinted := -1
+		onProgress := func(ev rsa4096.ProgressEvent) {
+			if ev.Attempts%100 == 0 && ev.Attempts != lastPrinted {
+				lastPrinted = ev.Attempts
+				fmt.Printf("      [progress] stage=%s attempts=%d stageProgress=%.1f%% overall=%.1f%%\n",
+					ev.Stage, ev.Attempts, ev.StageProgress*100, ev.OverallProgress*100)
+			}
+		}
+
+		result, err := rsa4096.GenerateFromBitString(v.InputBitString, onProgress)
 		if err != nil {
 			panic(fmt.Sprintf("%s: GenerateFromBitString: %v", v.ID, err))
 		}

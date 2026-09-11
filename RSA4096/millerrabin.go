@@ -16,11 +16,21 @@ import (
 )
 
 // MillerRabinRounds is deliberately over-provisioned (design doc §5.2 step
-// 4 calls for 64-100 rounds). Each round independently has at most a 1-in-4
-// chance of a composite slipping through; 64 rounds pushes the false-positive
-// probability to at most 4^-64, far below any other real-world failure mode
-// in the system.
-const MillerRabinRounds = 64
+// 4 calls for 64-100 rounds; set to the top of that range, 100, since key
+// generation is a one-time operation per seed -- there is no per-transaction
+// cost to amortize, so there is no reason not to buy the extra margin).
+// Each round independently has at most a 1-in-4 chance of a composite
+// slipping through; 100 rounds pushes the false-positive probability to at
+// most 4^-100, far below any other real-world failure mode in the system.
+//
+// This MUST stay numerically identical to ts/src/rsa4096/millerrabin.ts's
+// MILLER_RABIN_ROUNDS -- a mismatch would silently change how many stream
+// bytes get consumed confirming each accepted prime, breaking cross-language
+// byte-identity. Changing this value changes testvectors/v2_rsa4096.json's
+// frozen output (see that file's own regeneration procedure) because it
+// changes how many bytes get consumed confirming EVERY accepted prime, which
+// shifts where the search for the next prime begins.
+const MillerRabinRounds = 100
 
 var (
 	bigOne = big.NewInt(1)

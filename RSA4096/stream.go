@@ -39,10 +39,19 @@ import (
 // the same seed bytes for a different purpose.
 const rsa4096StreamDomainTag = "DALOS-gen1/RSA4096Stream/v1"
 
-// seedBitStringLen is the DALOS Genesis safe-scalar size (Elliptic/Parameters.go
-// e.S for DalosEllipse()). The RSA seed stream is defined only for the
-// Genesis 1600-bit seed for now; other curves would need their own S.
-const seedBitStringLen = 1600
+// minSeedBitStringLen is a sanity floor, NOT a cryptographic requirement of
+// this construction. Blake3-XOF hashes an input of any length correctly; the
+// stream itself has no opinion on how many bits the seed is. This package
+// was originally written for the DALOS Genesis 1600-bit seed only, but the
+// same pipeline works unchanged for any of DALOS_Crypto's other curve
+// safe-scalar sizes -- e.g. APOLLO's 1024 bits (Elliptic/Parameters.go
+// ApolloEllipse().S) -- since the seed is just bytes to a hash function, not
+// something the RSA construction interprets structurally. 128 bits is
+// chosen only to catch obvious mistakes (an empty string, a stray test
+// fixture) before they silently become "a weirdly small but 'valid' seed";
+// it is comfortably below every real curve this repo defines (LETO's 545 is
+// the smallest) and is not itself a security boundary.
+const minSeedBitStringLen = 128
 
 // writeLenPrefixed matches Elliptic/Schnorr.go's writeLenPrefixed: a 4-byte
 // big-endian length prefix followed by the data itself. This is the same
@@ -57,12 +66,13 @@ func writeLenPrefixed(buf *bytes.Buffer, data []byte) {
 	buf.Write(data)
 }
 
-// validateSeedBitString checks that s is exactly seedBitStringLen characters
-// of '0'/'1'. Mirrors the shape of Elliptic/KeyGeneration.go's
-// ValidateBitString but kept local and dependency-free for the prototype.
+// validateSeedBitString checks that s is at least minSeedBitStringLen
+// characters of '0'/'1'. Mirrors the shape of Elliptic/KeyGeneration.go's
+// ValidateBitString but kept local and dependency-free, and deliberately
+// does NOT pin an exact length -- see minSeedBitStringLen's doc comment.
 func validateSeedBitString(s string) error {
-	if len(s) != seedBitStringLen {
-		return errors.New("seed bitstring must be exactly 1600 characters")
+	if len(s) < minSeedBitStringLen {
+		return errors.New("seed bitstring must be at least 128 characters")
 	}
 	for _, c := range s {
 		if c != '0' && c != '1' {
@@ -72,11 +82,12 @@ func validateSeedBitString(s string) error {
 	return nil
 }
 
-// NewSeedStream takes the raw DALOS 1600-bit seed bitstring (the same
-// string GenerateScalarFromBitString consumes before EC-clamping — NOT the
-// clamped/EC-scalar form) and returns an io.Reader that produces an
-// effectively endless, fully deterministic stream of pseudorandom-looking
-// bytes derived from it.
+// NewSeedStream takes a raw pre-EC-clamping seed bitstring -- the same
+// string GenerateScalarFromBitString consumes before EC-clamping, for
+// WHICHEVER curve produced it (DALOS Genesis's 1600 bits, APOLLO's 1024,
+// or any other curve's safe-scalar size -- see minSeedBitStringLen) -- and
+// returns an io.Reader that produces an effectively endless, fully
+// deterministic stream of pseudorandom-looking bytes derived from it.
 //
 // Design decisions (see Decision Record §8.3 for the full reasoning):
 //

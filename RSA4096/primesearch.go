@@ -32,10 +32,20 @@ var publicExponent = big.NewInt(65537)
 // Returns the prime found and the number of candidates it took (useful for
 // sanity-checking against the expected ~710-draw average from the density
 // math).
-func FindPrime(stream io.Reader) (*big.Int, int, error) {
+//
+// stage and onProgress are purely observational (see progress.go):
+// onProgress, if non-nil, is called once per candidate draw with the
+// current attempt count and a probabilistic completion estimate. Passing
+// onProgress = nil (every internal caller in this package's own tests does)
+// skips the estimate computation entirely and reproduces byte-for-byte the
+// exact same (candidate, attempts, error) as before progress reporting
+// existed -- nothing about the search itself changes.
+func FindPrime(stream io.Reader, stage ProgressStage, onProgress ProgressFunc) (*big.Int, int, error) {
 	attempts := 0
 	for {
 		attempts++
+		reportProgress(onProgress, stage, attempts)
+
 		candidate, err := GenerateCandidate(stream)
 		if err != nil {
 			return nil, attempts, err
@@ -104,13 +114,13 @@ func checkAuxiliaryConstraints(p, q *big.Int) error {
 // stream is never rewound, so every attempt (successful or not) permanently
 // consumes stream material, exactly as the "structural, not statistical"
 // correctness bar demands: nothing is ever reused or replayed.
-func FindTwoPrimes(stream io.Reader) (p, q *big.Int, pAttempts, qAttempts int, err error) {
+func FindTwoPrimes(stream io.Reader, onProgress ProgressFunc) (p, q *big.Int, pAttempts, qAttempts int, err error) {
 	for {
-		p, pAttempts, err = FindPrime(stream)
+		p, pAttempts, err = FindPrime(stream, StageSearchingP, onProgress)
 		if err != nil {
 			return nil, nil, 0, 0, err
 		}
-		q, qAttempts, err = FindPrime(stream)
+		q, qAttempts, err = FindPrime(stream, StageSearchingQ, onProgress)
 		if err != nil {
 			return nil, nil, 0, 0, err
 		}

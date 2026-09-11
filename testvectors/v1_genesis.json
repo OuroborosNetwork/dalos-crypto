@@ -7,7 +7,7 @@
   "curve_cofactor": "4",
   "rng_seed_bits": "0xD4105C09702",
   "rng_seed_bitmaps": "0xB17A77",
-  "generated_at_utc": "2026-09-11T08:30:01Z",
+  "generated_at_utc": "2026-09-11T11:40:54Z",
   "host": "StoaChain/DALOS_Crypto test-vector generator v1.2.0",
   "bitstring_vectors": [
     {

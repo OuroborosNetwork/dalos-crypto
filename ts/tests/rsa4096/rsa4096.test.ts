@@ -15,7 +15,12 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { generateFromBitString, selfCheckTextbookRSA } from '../../src/rsa4096/index.js';
+import {
+  type ProgressEvent,
+  generateFromBitString,
+  generateFromBitStringAsync,
+  selfCheckTextbookRSA,
+} from '../../src/rsa4096/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const corpusPath = resolve(here, '..', '..', '..', 'testvectors', 'v2_rsa4096.json');
@@ -105,4 +110,90 @@ describe('RSA4096 corpus byte-identity', () => {
       expect(() => selfCheckTextbookRSA(result.key)).not.toThrow();
     });
   }
+});
+
+describe('RSA4096 progress reporting -- for building a UI progress bar', () => {
+  // Reuse the corpus's own first seed rather than a fresh one, so this
+  // describe block doesn't pay for a 4th independent full generation.
+  const corpus = loadCorpus();
+  const seed = corpus.rsa4096_vectors[0]!.input_bitstring;
+
+  function assertValidEventStream(
+    events: ProgressEvent[],
+    pAttempts: number,
+    qAttempts: number,
+  ): void {
+    expect(events.length).toBeGreaterThan(0);
+    const lastAttemptsInStage: Record<string, number> = {};
+    let sawP = false;
+    let sawQ = false;
+    for (const ev of events) {
+      expect(['p', 'q']).toContain(ev.stage);
+      if (ev.stage === 'p') sawP = true;
+      if (ev.stage === 'q') sawQ = true;
+
+      const prev = lastAttemptsInStage[ev.stage] ?? 0;
+      expect(ev.attempts).toBeGreaterThan(prev); // strictly increasing within a stage
+      lastAttemptsInStage[ev.stage] = ev.attempts;
+
+      expect(ev.stageProgress).toBeGreaterThanOrEqual(0);
+      expect(ev.stageProgress).toBeLessThan(1);
+      expect(ev.overallProgress).toBeGreaterThanOrEqual(0);
+      expect(ev.overallProgress).toBeLessThan(1);
+      const wantOverall = ev.stage === 'q' ? 0.5 + ev.stageProgress / 2 : ev.stageProgress / 2;
+      expect(ev.overallProgress).toBeCloseTo(wantOverall, 12);
+    }
+    expect(sawP).toBe(true);
+    expect(sawQ).toBe(true);
+    expect(lastAttemptsInStage.p).toBe(pAttempts);
+    expect(lastAttemptsInStage.q).toBe(qAttempts);
+  }
+
+  it('sync generateFromBitString reports a valid, usable progress stream', () => {
+    const events: ProgressEvent[] = [];
+    const result = generateFromBitString(seed, (ev) => events.push(ev));
+    assertValidEventStream(events, result.pAttempts, result.qAttempts);
+  });
+
+  it('a progress callback never changes the output (purely observational)', () => {
+    const withCallback = generateFromBitString(seed, () => {});
+    const withoutCallback = generateFromBitString(seed);
+    expect(withCallback.key.n).toBe(withoutCallback.key.n);
+    expect(withCallback.key.d).toBe(withoutCallback.key.d);
+    expect(withCallback.pAttempts).toBe(withoutCallback.pAttempts);
+    expect(withCallback.qAttempts).toBe(withoutCallback.qAttempts);
+  });
+
+  it('async generateFromBitStringAsync produces byte-identical output to the sync path, plus a valid progress stream', async () => {
+    const events: ProgressEvent[] = [];
+    const asyncResult = await generateFromBitStringAsync(seed, (ev) => events.push(ev));
+    const syncResult = generateFromBitString(seed);
+
+    expect(asyncResult.key.n).toBe(syncResult.key.n);
+    expect(asyncResult.key.d).toBe(syncResult.key.d);
+    expect(asyncResult.address).toBe(syncResult.address);
+    assertValidEventStream(events, asyncResult.pAttempts, asyncResult.qAttempts);
+  });
+});
+
+describe('RSA4096 seed length is not hardcoded to DALOS Genesis', () => {
+  // Confirms the pipeline works unchanged for APOLLO's 1024-bit safe
+  // scalar (not just DALOS Genesis's 1600), since Blake3-XOF has no
+  // structural opinion on input length -- see stream.ts's
+  // MIN_SEED_BIT_STRING_LEN doc comment. Does not check against a frozen
+  // vector (there isn't one for this length); just confirms it succeeds
+  // and produces a well-formed key.
+  it('accepts a 1024-bit (APOLLO-shaped) seed and produces a valid key', () => {
+    const apolloSeed = '10'.repeat(512); // 1024 characters of '0'/'1'
+    expect(apolloSeed.length).toBe(1024);
+
+    const result = generateFromBitString(apolloSeed);
+    expect(result.key.n.toString(2).length).toBe(4096);
+    expect(result.address.length).toBe(43);
+    expect(() => selfCheckTextbookRSA(result.key)).not.toThrow();
+  });
+
+  it('rejects a seed shorter than the sanity floor', () => {
+    expect(() => generateFromBitString('01'.repeat(63))).toThrow(); // 126 chars, floor is 128
+  });
 });

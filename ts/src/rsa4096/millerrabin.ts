@@ -15,12 +15,16 @@ import { CANDIDATE_BYTES } from './candidate.js';
 
 /**
  * Deliberately over-provisioned (design doc §5.2 step 4 calls for 64-100
- * rounds). Matches RSA4096/millerrabin.go's MillerRabinRounds exactly --
- * this MUST stay in sync with the Go side; a mismatch would mean the two
- * implementations draw a different number of stream bytes per candidate,
- * breaking cross-language byte-identity.
+ * rounds; set to the top of that range, 100, since key generation is a
+ * one-time operation per seed -- no per-transaction cost to amortize, so
+ * no reason not to buy the extra margin). Matches RSA4096/millerrabin.go's
+ * MillerRabinRounds exactly -- this MUST stay in sync with the Go side; a
+ * mismatch would mean the two implementations draw a different number of
+ * stream bytes confirming each accepted prime, breaking cross-language
+ * byte-identity. Changing this value changes testvectors/v2_rsa4096.json's
+ * frozen output (see that file's own regeneration procedure).
  */
-export const MILLER_RABIN_ROUNDS = 64;
+export const MILLER_RABIN_ROUNDS = 100;
 
 /**
  * Draws a fresh Miller-Rabin witness `a` in the range [2, n-2] from
