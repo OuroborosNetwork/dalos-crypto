@@ -8,7 +8,7 @@
 > same custom seed phrase.
 
 [![npm](https://img.shields.io/npm/v/@ouronet/dalos-crypto.svg)](https://www.npmjs.com/package/@ouronet/dalos-crypto)
-[![tests](https://img.shields.io/badge/tests-447%20passing-brightgreen.svg)](#verification)
+[![tests](https://img.shields.io/badge/tests-479%20passing-brightgreen.svg)](#verification)
 [![license](https://img.shields.io/badge/license-UNLICENSED-blue.svg)](https://github.com/StoaChain/DALOS_Crypto)
 
 ---
@@ -291,6 +291,67 @@ See [`.docs/deterministic-rsa4096-from-seed.md`](https://github.com/OuroborosNet
 for the full design history, empirical research, and everything checked
 along the way.
 
+#### One seed, many independent Arweave addresses
+
+A seed phrase's whole point is to derive many usable accounts, not just
+one — but RSA has no BIP-32-style non-hardened child-key trick (no
+additive homomorphism the way EC scalars have), so every "child" address
+here really is an independent full keypair. `generateFromBitStringAtIndex`
+derives address `#index` from the same seed bitstring by running one
+extra domain-separated Blake3 hash to produce a fresh, independent seed
+per index, then the same unmodified prime search:
+
+```ts
+import { generateFromBitStringAtIndex } from "@ouronet/dalos-crypto/rsa4096";
+
+const bits1600 = "1".repeat(800) + "0".repeat(800);
+
+const address0 = generateFromBitStringAtIndex(bits1600, 0); // == generateFromBitString(bits1600), forever
+const address1 = generateFromBitStringAtIndex(bits1600, 1); // a real, independent second address
+const address777 = generateFromBitStringAtIndex(bits1600, 777); // directly reachable -- no need to generate 1..776 first
+
+console.log(address0.address, address1.address, address777.address);
+```
+
+`index === 0` is structurally guaranteed byte-identical, forever, to
+calling `generateFromBitString` directly — this can never silently
+change any address you already generated. Any index is directly
+reachable without generating the ones before it: a pure function of
+`(seed, index)`, not a "walk forward from 0" model.
+
+For "the first N addresses" (or any `startIndex..startIndex+count-1`
+range), `generateBatchFromBitStringAsync` adds sequential orchestration
+with ONE combined progress readout across the whole batch, plus results
+delivered incrementally as each one completes:
+
+```ts
+import {
+  generateBatchFromBitStringAsync,
+  type BatchProgressEvent,
+} from "@ouronet/dalos-crypto/rsa4096";
+
+const bits1600 = "1".repeat(800) + "0".repeat(800);
+
+function onProgress(ev: BatchProgressEvent) {
+  // ev.overallProgress combines this address's own progress with how
+  // many of the batch's addresses are already done -- one honest 0..1
+  // readout for the whole run, not just the address in flight.
+  console.log(`address #${ev.index}: ~${(ev.overallProgress * 100).toFixed(0)}% of the whole batch`);
+}
+
+function onResult(index: number, result: { address: string }) {
+  console.log(`address #${index} ready: ${result.address}`); // render progressively, don't wait for all of them
+}
+
+const firstHundred = await generateBatchFromBitStringAsync(bits1600, 0, 100, onProgress, onResult);
+console.log(firstHundred.length); // 100 independent Arweave addresses from one seed
+```
+
+A failure partway through a batch throws `BatchGenerationError`, which
+carries `.completed` — the results already finished before the failure —
+so a caller never has to discard already-completed, multi-second-cost
+work just because a later index failed.
+
 ---
 
 ## Quick start
@@ -452,7 +513,7 @@ implementations consume the seed identically, not just coincidentally
 agree on the final key). Run locally:
 
 ```bash
-npm test   # 447 tests, ~30-60s
+npm test   # 479 tests, ~60-90s
 ```
 
 See the Go-reference corpora: [`testvectors/v1_genesis.json`](https://github.com/StoaChain/DALOS_Crypto/blob/main/testvectors/v1_genesis.json)

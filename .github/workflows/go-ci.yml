@@ -98,7 +98,7 @@ jobs:
           # files — it compares elided SHA-256s — but a per-line diff
           # is what a human needs to debug a failure.)
           mkdir -p /tmp/corpus-snapshot
-          for F in testvectors/v1_genesis.json testvectors/v1_historical.json testvectors/v1_adversarial.json; do
+          for F in testvectors/v1_genesis.json testvectors/v1_historical.json testvectors/v1_adversarial.json testvectors/v2_rsa4096.json testvectors/v3_rsa4096_indexed.json; do
             cp "$F" "/tmp/corpus-snapshot/$(basename $F).committed"
           done
 
@@ -128,6 +128,14 @@ jobs:
             # drift, fixed opportunistically while re-pinning genesis.
             ["testvectors/v1_adversarial.json"]="582025b173de7fb900d65d5b5ad3933ef9abdbc460681c2305b2fadd1aef0bf9"
             ["testvectors/v2_rsa4096.json"]="0d074fca0f14a5ae6cbcdae571b8d2a7df78dfef12216ac9f77e5f043d751bac"
+            # New corpus, frozen 2026-09-11: locks in the indexed/batch
+            # generation feature (RSA4096/indexed.go, RSA4096/batch.go)
+            # -- 6 vectors, sharing seeds across consecutive/non-
+            # consecutive indices so they double as the frozen
+            # cross-check for GenerateBatchFromBitString too (batching
+            # is pure orchestration over indexed generation, not a
+            # separate derivation).
+            ["testvectors/v3_rsa4096_indexed.json"]="2317df5f9ba729b97171949e546a8b35c4ace5759b078b054ccc6a17a18708b0"
           )
 
           FAILED=0

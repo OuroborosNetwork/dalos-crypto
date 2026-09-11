@@ -48,6 +48,7 @@ const (
 	RNG_SEED_BITMAPS         int64 = 0xB17A77      // "BITAPP" in 0x base
 	RNG_SEED_BITS_HISTORICAL int64 = 0x415CCEEDED  // "ALICE-CEEDED" — historical bitstring vectors
 	RNG_SEED_RSA4096         int64 = 0xC0DE4096    // "CODE4096" in 0x base — dedicated to RSA4096, shares nothing with the EC-path seeds above
+	RNG_SEED_RSA4096_INDEXED int64 = 0xC0DE4096001 // dedicated to the indexed/batch corpus (v3_rsa4096_indexed.json) — independent of RNG_SEED_RSA4096 so neither corpus's regeneration can perturb the other's RNG stream position
 )
 
 // --- Vector schema -------------------------------------------------------
@@ -397,8 +398,8 @@ var seedWordFixtures = [][]string{
 	{"Ouro", "Network", "Testnet"},
 	{"a", "b", "c", "d", "e", "f", "g", "h"},
 	{"single"},
-	{"жизнь", "плющ"},           // Cyrillic, in-charset subset ("life", "ivy")
-	{"Δελτα", "Σιγμα", "Ωμεγα"}, // Greek, in-charset subset (letter names)
+	{"жизнь", "плющ"},                   // Cyrillic, in-charset subset ("life", "ivy")
+	{"Δελτα", "Σιγμα", "Ωμεγα"},         // Greek, in-charset subset (letter names)
 	{"café", "naïve", "façade", "über"}, // Accented Latin
 	{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"},
 	{"the", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"},
@@ -456,6 +457,7 @@ func main() {
 	generateAdversarial()
 	generateHistorical()
 	generateRSA4096()
+	generateRSA4096Indexed()
 }
 
 func generateGenesis() {
@@ -742,13 +744,13 @@ func generateAdversarial() {
 	}
 
 	type adversarialCase struct {
-		id              string
-		description     string
-		signature       string
-		publicKey       string
-		expectAccept    bool
-		construction    string
-		orderProof      string
+		id           string
+		description  string
+		signature    string
+		publicKey    string
+		expectAccept bool
+		construction string
+		orderProof   string
 	}
 
 	cases := []adversarialCase{
@@ -848,7 +850,7 @@ func generateAdversarial() {
 	// matching gate refuses to load mismatched-version files, defending
 	// against silent stale-corpus consumption.
 	adversarialOutput := struct {
-		SchemaVersion              int                          `json:"schema_version"`
+		SchemaVersion              int                         `json:"schema_version"`
 		AdversarialCofactorVectors []AdversarialCofactorVector `json:"adversarial_cofactor_vectors"`
 	}{
 		SchemaVersion:              1,
@@ -1147,5 +1149,148 @@ func generateRSA4096() {
 
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintf(os.Stderr, "  DONE. %d RSA4096 vectors written to %s\n", len(corpus.Vectors), finalPath)
+	fmt.Fprintln(os.Stderr, "=============================================================")
+}
+
+// --- RSA4096 indexed/batch corpus -------------------------------------------
+//
+// RSA4096IndexedVector is RSA4096Vector plus an Index field. Deliberately a
+// SEPARATE type (not an embedded/extended RSA4096Vector) so this corpus's
+// schema can evolve independently of v2_rsa4096.json's frozen shape --
+// per docs/ADDING_NEW_PRIMITIVES.md, a new capability gets a new corpus
+// file, never a retrofit onto an existing frozen one.
+type RSA4096IndexedVector struct {
+	ID              string      `json:"id"`
+	Source          string      `json:"source"` // "deterministic-rng" or "seed-words"
+	InputBitString  string      `json:"input_bitstring"`
+	InputWords      []string    `json:"input_words,omitempty"`
+	Index           uint32      `json:"index"`
+	PrimeP          string      `json:"prime_p_hex"`
+	PrimeQ          string      `json:"prime_q_hex"`
+	ModulusN        string      `json:"modulus_n_hex"`
+	PrivateExponent string      `json:"private_exponent_d_hex"`
+	Dp              string      `json:"dp_hex"`
+	Dq              string      `json:"dq_hex"`
+	Qi              string      `json:"qi_hex"`
+	JWK             rsa4096.JWK `json:"jwk"`
+	Address         string      `json:"address"`
+	PAttempts       int         `json:"p_attempts"`
+	QAttempts       int         `json:"q_attempts"`
+}
+
+// RSA4096IndexedCorpus -- top-level corpus written to v3_rsa4096_indexed.json.
+type RSA4096IndexedCorpus struct {
+	SchemaVersion     int                    `json:"schema_version"`
+	GeneratorVersion  string                 `json:"generator_version"`
+	RngSeedBits       string                 `json:"rng_seed_bits"`
+	MillerRabinRounds int                    `json:"miller_rabin_rounds"`
+	SmallPrimeCount   int                    `json:"small_prime_count"`
+	GeneratedAtUTC    string                 `json:"generated_at_utc"`
+	Host              string                 `json:"host"`
+	Vectors           []RSA4096IndexedVector `json:"rsa4096_indexed_vectors"`
+}
+
+// generateRSA4096Indexed builds v3_rsa4096_indexed.json: locks in the
+// 2026-09-11 indexed/batch-generation feature (RSA4096/indexed.go,
+// RSA4096/batch.go) against a frozen corpus, exactly like every other
+// deterministic capability in this repo.
+//
+// Six vectors, deliberately chosen to double up on coverage without
+// tripling the RNG-driven full-generation cost (each costs low-single-
+// digit seconds, same as v2_rsa4096.json's vectors):
+//   - idx-01/02/03 share ONE 1600-bit (DALOS-shaped) seed at indices
+//     0, 1, 2 -- idx-01 alone locks in the single most safety-critical
+//     property this feature has (index 0 byte-identical to the
+//     unindexed path); all three TOGETHER are exactly what
+//     GenerateBatchFromBitString(seed, 0, 3) must reproduce, so they
+//     also serve as the frozen cross-check for the batch orchestration
+//     layer without needing a separate "batch" JSON shape at all --
+//     batching is pure orchestration over indexed generation, so the
+//     indexed vectors already ARE the batch vectors.
+//   - idx-04/05 share ONE 1024-bit (APOLLO-shaped) seed at indices
+//     0 and 7 -- covers the other blessed length plus a
+//     non-consecutive index.
+//   - idx-06 is a seed-words-derived 1600-bit seed (the same
+//     seedWordFixtures[0] used elsewhere in this file) at a non-zero
+//     index -- covers seed-word provenance combined with indexing.
+func generateRSA4096Indexed() {
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "=============================================================")
+	fmt.Fprintln(os.Stderr, "  Generating RSA4096 indexed/batch corpus (multiple addresses per seed)...")
+
+	dalosEllipse := el.DalosEllipse()
+	apolloEllipse := el.ApolloEllipse()
+	rngIndexed := mrand.New(mrand.NewSource(RNG_SEED_RSA4096_INDEXED))
+
+	corpus := RSA4096IndexedCorpus{
+		SchemaVersion:     1,
+		GeneratorVersion:  "1.0.0",
+		RngSeedBits:       fmt.Sprintf("0x%X", RNG_SEED_RSA4096_INDEXED),
+		MillerRabinRounds: rsa4096.MillerRabinRounds,
+		SmallPrimeCount:   rsa4096.SmallPrimeCount,
+		GeneratedAtUTC:    time.Now().UTC().Format(time.RFC3339),
+		Host:              "StoaChain/DALOS_Crypto test-vector generator (RSA4096 indexed v1.0.0)",
+	}
+
+	addVector := func(id, source, bits string, words []string, index uint32) {
+		result, err := rsa4096.GenerateFromBitStringAtIndex(bits, index, nil)
+		must(err, fmt.Sprintf("rsa4096-indexed %s: GenerateFromBitStringAtIndex", id))
+
+		if result.Key.N.BitLen() != 4096 {
+			panic(fmt.Sprintf("rsa4096-indexed %s: n is %d bits, want 4096", id, result.Key.N.BitLen()))
+		}
+		if len(result.Address) != 43 {
+			panic(fmt.Sprintf("rsa4096-indexed %s: address is %d chars, want 43", id, len(result.Address)))
+		}
+		must(rsa4096.SelfCheckTextbookRSA(result.Key), fmt.Sprintf("rsa4096-indexed %s: SelfCheckTextbookRSA", id))
+
+		corpus.Vectors = append(corpus.Vectors, RSA4096IndexedVector{
+			ID:              id,
+			Source:          source,
+			InputBitString:  bits,
+			InputWords:      words,
+			Index:           index,
+			PrimeP:          result.P.Text(16),
+			PrimeQ:          result.Q.Text(16),
+			ModulusN:        result.Key.N.Text(16),
+			PrivateExponent: result.Key.D.Text(16),
+			Dp:              result.Key.Dp.Text(16),
+			Dq:              result.Key.Dq.Text(16),
+			Qi:              result.Key.Qi.Text(16),
+			JWK:             *result.JWK,
+			Address:         result.Address,
+			PAttempts:       result.PAttempts,
+			QAttempts:       result.QAttempts,
+		})
+		fmt.Fprintf(os.Stderr, "    %s: index=%d address=%s (p_attempts=%d, q_attempts=%d)\n",
+			id, index, result.Address, result.PAttempts, result.QAttempts)
+	}
+
+	dalosSeed := randomBitString(rngIndexed, int(dalosEllipse.S))
+	addVector("rsa4096-idx-01", "deterministic-rng", dalosSeed, nil, 0)
+	addVector("rsa4096-idx-02", "deterministic-rng", dalosSeed, nil, 1)
+	addVector("rsa4096-idx-03", "deterministic-rng", dalosSeed, nil, 2)
+
+	apolloSeed := randomBitString(rngIndexed, int(apolloEllipse.S))
+	addVector("rsa4096-idx-04", "deterministic-rng", apolloSeed, nil, 0)
+	addVector("rsa4096-idx-05", "deterministic-rng", apolloSeed, nil, 7)
+
+	rsaSwBits, err := dalosEllipse.SeedWordsToBitString(seedWordFixtures[0])
+	must(err, "rsa4096-idx-06: SeedWordsToBitString")
+	addVector("rsa4096-idx-06", "seed-words", rsaSwBits, seedWordFixtures[0], 3)
+
+	tmpPath := "testvectors/v3_rsa4096_indexed.json.tmp"
+	finalPath := "testvectors/v3_rsa4096_indexed.json"
+	out, err := os.Create(tmpPath)
+	must(err, "create v3_rsa4096_indexed.json.tmp")
+
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	must(enc.Encode(corpus), "encode RSA4096 indexed corpus")
+	must(out.Close(), "close v3_rsa4096_indexed.json.tmp")
+	must(os.Rename(tmpPath, finalPath), "rename v3_rsa4096_indexed.json.tmp")
+
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintf(os.Stderr, "  DONE. %d RSA4096 indexed vectors written to %s\n", len(corpus.Vectors), finalPath)
 	fmt.Fprintln(os.Stderr, "=============================================================")
 }

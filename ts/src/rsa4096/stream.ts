@@ -38,20 +38,25 @@ export const ALLOWED_SEED_BIT_STRING_LENGTHS: ReadonlySet<number> = new Set([
   1600, // DALOS Genesis
 ]);
 
-const textEncoder = new TextEncoder();
+export const textEncoder = new TextEncoder();
 
 /**
  * 4-byte big-endian length prefix followed by the data itself -- matches
  * RSA4096/stream.go's writeLenPrefixed exactly (which itself matches
  * Elliptic/Schnorr.go's Schnorr-v2 framing convention).
+ *
+ * Exported (not re-exported from index.ts, so not part of the public npm
+ * surface) so indexed.ts can reuse the exact same framing for its own
+ * domain-separated hash, mirroring how Go's unexported-but-same-package
+ * writeLenPrefixed is shared between stream.go and indexed.go.
  */
-function writeLenPrefixed(parts: Uint8Array[], data: Uint8Array): void {
+export function writeLenPrefixed(parts: Uint8Array[], data: Uint8Array): void {
   const lenBytes = new Uint8Array(4);
   new DataView(lenBytes.buffer).setUint32(0, data.length, false); // big-endian
   parts.push(lenBytes, data);
 }
 
-function concatBytes(parts: Uint8Array[]): Uint8Array {
+export function concatBytes(parts: Uint8Array[]): Uint8Array {
   const total = parts.reduce((sum, p) => sum + p.length, 0);
   const out = new Uint8Array(total);
   let offset = 0;

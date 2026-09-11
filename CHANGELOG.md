@@ -16,6 +16,63 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [4.3.0] — 2026-09-11
+
+**New feature: one seed now produces MANY independent Arweave addresses, not just one.**
+
+Direct answer to a real gap: a seed phrase's whole point is to derive many
+usable accounts, but the RSA-4096 side only ever produced exactly one
+Arweave address per seed. RSA has no BIP-32-style non-hardened
+child-key trick (no additive homomorphism the way EC scalars have), so
+every "child" address is a genuinely independent full keypair — the
+addition here is a way to derive a fresh, independent, deterministic
+*seed* per index, then run the exact same, otherwise completely
+unmodified prime-search pipeline.
+
+**`GenerateFromBitStringAtIndex`/`generateFromBitStringAtIndex` (+ TS's
+`...Async` variant)** derive address `#index` from the same 1024/1600-bit
+seed bitstring. `index == 0` is special-cased to call the existing
+`GenerateFromBitString` directly on the unmodified seed — **byte-identical,
+forever, to every already-published result** — this is a structural
+guarantee (the special case is in the code, not just a test) that keeps
+everything already live under `4.2.0` valid. Every other index runs one
+extra domain-separated Blake3 hash (`DALOS-gen1/RSA4096Index/v1`) to
+derive a fresh seed of the same length, then the unmodified pipeline.
+Any index is directly reachable without generating the ones before it —
+a pure function of `(seed, index)`, no chained state — by explicit
+requirement, not a "must walk forward from 0" model.
+
+**`GenerateBatchFromBitString`/`generateBatchFromBitString` (+ `...Async`)**
+add sequential orchestration for "the first N addresses" (or any
+`startIndex..startIndex+count-1` range): one COMBINED 0..1 progress
+readout across the *whole* batch (not just the address currently being
+searched for), results delivered incrementally via a per-address
+callback so a UI can render address #1, #2, #3... as they land, and a
+settled answer for partial failure — a failure partway through returns
+the results already completed (real, multi-second work) *alongside* the
+error, never silently discarding them (Go: `([]*KeyGenResult, error)`
+with a non-nil partial slice on error; TS: throws `BatchGenerationError`
+carrying `.completed`).
+
+Deliberately scoped to the RSA/Arweave layer only — the DALOS/APOLLO EC
+account that produced the seed is untouched. One Ouronet EC account, many
+independent Arweave addresses under it, not a parallel HD tree.
+
+New frozen corpus, `testvectors/v3_rsa4096_indexed.json` (6 vectors):
+`rsa4096-idx-01/02/03` share one 1600-bit seed at indices 0/1/2 (doubling
+as the frozen cross-check for `GenerateBatchFromBitString`, since batching
+is pure orchestration over indexed generation, not a separate derivation);
+`rsa4096-idx-04/05` share one 1024-bit (APOLLO-shaped) seed at indices
+0 and 7; `rsa4096-idx-06` is a seed-words-derived seed at a non-zero
+index. Cross-language byte-identity confirmed directly, not just via the
+corpus: the same seed at indices `0, 1, 2, 42, 777` produces identical
+addresses in Go and TypeScript, checked side-by-side.
+
+**479 tests pass** in TS (up from 462); 16 new Go tests across both
+`indexed.go` and `batch.go`.
+
+---
+
 ## [4.2.0] — 2026-09-11
 
 **Input-hardening release: the seed-word contract closed, and RSA-4096's seed-length contract tightened, both enforced identically everywhere.**

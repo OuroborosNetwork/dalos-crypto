@@ -6,6 +6,29 @@ This file captures the verbatim output of the Go validation suite against the DA
 
 ---
 
+## Run — 2026-09-11, latest (indexed/batch RSA4096 generation: one seed, many Arweave addresses)
+
+### What changed
+
+Added `RSA4096/indexed.go` (`GenerateFromBitStringAtIndex`) and `RSA4096/batch.go` (`GenerateBatchFromBitString`), plus their TS mirrors (`ts/src/rsa4096/indexed.ts`, `ts/src/rsa4096/batch.ts`) — deterministic derivation of many independent Arweave addresses from one seed, by index, with `index == 0` structurally guaranteed byte-identical to the pre-existing `GenerateFromBitString`. New frozen corpus `testvectors/v3_rsa4096_indexed.json` (6 vectors), never touching `v2_rsa4096.json`.
+
+### Checks
+
+| Check | Result |
+|-------|--------|
+| `v1_genesis.json` / `v1_historical.json` / `v1_adversarial.json` / `v2_rsa4096.json` byte-identity (extended-elided) | ✅ UNCHANGED — confirmed via diff before restoring to HEAD; none of this feature's code touches any existing generation path |
+| `testvectors/v3_rsa4096_indexed.json` (new) | ✅ 6/6 vectors generated cleanly; elided SHA-256 `2317df5f9ba729b97171949e546a8b35c4ace5759b078b054ccc6a17a18708b0`, pinned in `go-ci.yml` |
+| `go test ./...` | ✅ PASS, all packages — 16 new tests across `indexed_test.go` (9) and `batch_test.go` (7) |
+| `npm test` (TS) | ✅ 479/479 passing (up from 462) — 11 new in `indexed.test.ts`, 9 in `batch.test.ts`, 8 in `indexed-corpus.test.ts` (the new corpus's byte-identity gate, including a dedicated check that `generateBatchFromBitString(seed, 0, 3)` reproduces `rsa4096-idx-01/02/03` exactly) |
+| `npm run lint` / `npm run typecheck` / `npm run docs:check` | ✅ PASS |
+| Direct Go↔TS cross-check (not corpus-mediated) | ✅ Same seed at indices `0, 1, 2, 42, 777`: identical addresses in both languages, verified side-by-side in a scratch script, not just inferred from the corpus matching both |
+
+### What this run proves
+
+The single most safety-critical property — that adding this capability could not silently perturb any address anyone might already be relying on — is enforced structurally (`index == 0` calls the untouched function directly, not just "happens to produce the same result"), and separately confirmed empirically: every pre-existing corpus file's elided hash is unchanged. The new corpus's vectors were deliberately chosen so 3 of them (indices 0/1/2 of one seed) double as the frozen proof that batch orchestration reproduces indexed generation exactly, without needing a second, separately-frozen "batch" vector shape.
+
+---
+
 ## Run — 2026-09-11, later yet again (RSA4096 seed-bitstring length tightened to a closed allow-list)
 
 ### What changed

@@ -44,3 +44,16 @@ export {
   selfCheckTextbookRSA,
 } from './pipeline.js';
 export type { KeyGenResult } from './pipeline.js';
+export {
+  generateFromBitStringAtIndex,
+  generateFromBitStringAtIndexAsync,
+  deriveIndexedSeedBitString,
+  MAX_INDEX,
+} from './indexed.js';
+export {
+  generateBatchFromBitString,
+  generateBatchFromBitStringAsync,
+  BatchRangeError,
+  BatchGenerationError,
+} from './batch.js';
+export type { BatchProgressEvent, BatchProgressCallback, BatchResultCallback } from './batch.js';
