@@ -13,18 +13,30 @@ import { type Blake3XofStream, createBlake3XofStream } from '../dalos-blake3/ind
 const RSA4096_STREAM_DOMAIN_TAG = 'DALOS-gen1/RSA4096Stream/v1';
 
 /**
- * A sanity floor, NOT a cryptographic requirement of this construction --
- * matches RSA4096/stream.go's minSeedBitStringLen exactly. Blake3-XOF
- * hashes an input of any length correctly; this package was originally
- * written for DALOS Genesis's 1600-bit seed only, but the same pipeline
- * works unchanged for any of DALOS_Crypto's other curve safe-scalar
- * sizes -- e.g. APOLLO's 1024 bits -- since the seed is just bytes to a
- * hash function, not something this construction interprets
- * structurally. 128 is chosen only to catch obvious mistakes, not as a
- * security boundary; it sits comfortably below every real curve this
- * repo defines (LETO's 545 is the smallest).
+ * A closed allow-list, NOT a floor -- matches RSA4096/stream.go's
+ * allowedSeedBitStringLengths exactly. Earlier versions of this package
+ * accepted any bitstring >= 128 characters (Blake3-XOF has no structural
+ * opinion on input length, so that worked) -- but it left the door open
+ * to an unbounded, unaudited "any string, any length" input path with no
+ * real derivation story and no tie to any validated seed source.
+ *
+ * Settled 2026-09-11: RSA-4096's actual security comes from the 2048-bit
+ * prime search space, not from seed length -- once the seed has enough
+ * bits to unambiguously seed the Blake3-XOF stream (128 bits already
+ * cleared that bar many times over), a longer seed buys zero additional
+ * margin. So there is no reason to accept arbitrary lengths, and a real
+ * reason not to: gating to EXACTLY the two lengths that come out of this
+ * repo's two production EC curves -- APOLLO's 1024-bit safe scalar and
+ * DALOS Genesis's 1600-bit safe scalar -- structurally forces every RSA
+ * seed to have passed through one of those two curves' own
+ * already-validated pipelines (seed-word charset/count checks, bitmap
+ * dimensions, etc. -- see `ts/src/gen1/hashing.ts`'s `validateSeedWords`),
+ * rather than accepting raw bytes that never went through any of that.
  */
-export const MIN_SEED_BIT_STRING_LEN = 128;
+export const ALLOWED_SEED_BIT_STRING_LENGTHS: ReadonlySet<number> = new Set([
+  1024, // APOLLO
+  1600, // DALOS Genesis
+]);
 
 const textEncoder = new TextEncoder();
 
@@ -51,14 +63,16 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
 }
 
 /**
- * Validates that `s` is at least {@link MIN_SEED_BIT_STRING_LEN}
- * characters of '0'/'1'. Matches RSA4096/stream.go's
- * validateSeedBitString exactly -- deliberately does NOT pin an exact
- * length, see MIN_SEED_BIT_STRING_LEN's doc comment.
+ * Validates that `s` is exactly one of {@link ALLOWED_SEED_BIT_STRING_LENGTHS}
+ * characters of '0'/'1' -- 1024 (APOLLO) or 1600 (DALOS Genesis), no other
+ * length however long. Matches RSA4096/stream.go's validateSeedBitString
+ * exactly.
  */
 export function validateSeedBitString(s: string): void {
-  if (s.length < MIN_SEED_BIT_STRING_LEN) {
-    throw new Error('seed bitstring must be at least 128 characters');
+  if (!ALLOWED_SEED_BIT_STRING_LENGTHS.has(s.length)) {
+    throw new Error(
+      'seed bitstring must be exactly 1024 (APOLLO) or 1600 (DALOS Genesis) characters',
+    );
   }
   for (const c of s) {
     if (c !== '0' && c !== '1') {
@@ -68,9 +82,9 @@ export function validateSeedBitString(s: string): void {
 }
 
 /**
- * Takes a raw pre-EC-clamping seed bitstring -- for WHICHEVER curve
- * produced it (DALOS Genesis's 1600 bits, APOLLO's 1024, or any other
- * curve's safe-scalar size -- see MIN_SEED_BIT_STRING_LEN) -- and returns
+ * Takes a raw pre-EC-clamping seed bitstring -- for EITHER of the two
+ * curves this package accepts (DALOS Genesis's 1600 bits or APOLLO's
+ * 1024 -- see ALLOWED_SEED_BIT_STRING_LENGTHS) -- and returns
  * a {@link Blake3XofStream} that produces an effectively endless, fully
  * deterministic stream of pseudorandom-looking bytes derived from it.
  * Matches RSA4096/stream.go's NewSeedStream exactly: same domain tag, same

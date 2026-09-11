@@ -379,14 +379,26 @@ func randomBitmap(rng *mrand.Rand) bmp.Bitmap {
 }
 
 // --- Seed-word fixtures --------------------------------------------------
-
+//
+// Every word below must satisfy Elliptic.ValidateSeedWords: every glyph
+// drawn from the 256-glyph DALOS CharacterMatrix. That matrix is a
+// curated address-rendering alphabet, NOT full Unicode/full-script
+// coverage — e.g. it has only a Cyrillic *subset* (the letters that
+// don't double as Latin/Greek homoglyphs) and Greek capitals/smalls
+// minus a couple of Latin-homoglyph letters, with no accented Greek
+// vowels at all. The Cyrillic and Greek fixtures below were chosen
+// letter-by-letter against that matrix (see .docs/deterministic-
+// rsa4096-from-seed.md and the 2026-09-11 seed-word-contract fix) —
+// don't add new non-Latin fixtures without checking every glyph against
+// Elliptic/CharacterMatrix.go first, or the generator will fail at
+// ValidateSeedWords instead of producing a vector.
 var seedWordFixtures = [][]string{
 	{"hello", "world", "dalos", "genesis"},
 	{"Ouro", "Network", "Testnet"},
 	{"a", "b", "c", "d", "e", "f", "g", "h"},
 	{"single"},
-	{"привет", "мир"},                   // Cyrillic
-	{"Γειά", "σου", "κόσμε"},            // Greek
+	{"жизнь", "плющ"},           // Cyrillic, in-charset subset ("life", "ivy")
+	{"Δελτα", "Σιγμα", "Ωμεγα"}, // Greek, in-charset subset (letter names)
 	{"café", "naïve", "façade", "über"}, // Accented Latin
 	{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"},
 	{"the", "quick", "brown", "fox", "jumps", "over", "the", "lazy", "dog"},
@@ -499,7 +511,8 @@ func generateGenesis() {
 	// 2. Seed words → keys → addresses
 	fmt.Fprintln(os.Stderr, "[2/4] Generating seed-word vectors...")
 	for i, words := range seedWordFixtures {
-		bits := ellipse.SeedWordsToBitString(words)
+		bits, err := ellipse.SeedWordsToBitString(words)
+		must(err, fmt.Sprintf("seedwords %d: SeedWordsToBitString", i))
 		scalar, err := ellipse.GenerateScalarFromBitString(bits)
 		must(err, fmt.Sprintf("seedwords %d: GenerateScalarFromBitString", i))
 
@@ -924,7 +937,8 @@ func generateHistorical() {
 
 		// 5 seedword vectors.
 		for i, words := range historicalSeedWordFixtures {
-			bits := ellipse.SeedWordsToBitString(words)
+			bits, err := ellipse.SeedWordsToBitString(words)
+			must(err, fmt.Sprintf("%s seedwords %d: SeedWordsToBitString", c.name, i))
 			scalar, err := ellipse.GenerateScalarFromBitString(bits)
 			must(err, fmt.Sprintf("%s seedwords %d: GenerateScalarFromBitString", c.name, i))
 
@@ -1116,7 +1130,9 @@ func generateRSA4096() {
 
 	addVector("rsa4096-bs-01", "deterministic-rng", randomBitString(rngRSA, int(ellipse.S)), nil)
 	addVector("rsa4096-bs-02", "deterministic-rng", randomBitString(rngRSA, int(ellipse.S)), nil)
-	addVector("rsa4096-sw-01", "seed-words", ellipse.SeedWordsToBitString(seedWordFixtures[0]), seedWordFixtures[0])
+	rsaSwBits, err := ellipse.SeedWordsToBitString(seedWordFixtures[0])
+	must(err, "rsa4096-sw-01: SeedWordsToBitString")
+	addVector("rsa4096-sw-01", "seed-words", rsaSwBits, seedWordFixtures[0])
 
 	tmpPath := "testvectors/v2_rsa4096.json.tmp"
 	finalPath := "testvectors/v2_rsa4096.json"

@@ -16,6 +16,88 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [4.2.0] — 2026-09-11
+
+**Input-hardening release: the seed-word contract closed, and RSA-4096's seed-length contract tightened, both enforced identically everywhere.**
+
+Settles a gap this project's own research surfaced: seed-word input had no
+enforced contract anywhere except a single CLI flag handler
+(`Dalos.go`'s `-seed`), and even that handler's own checks were
+inconsistent (byte-length instead of glyph-length) and reused the
+address-rendering character alphabet as an input filter without that ever
+being a deliberate design decision. Neither the Go library functions nor
+the TypeScript port validated seed-word input at all — confirmed
+empirically by feeding the published npm package a 1000-word array and
+watching it hash silently.
+
+**Final restriction level, enforced by a single shared validator in each
+language** (`Elliptic.ValidateSeedWords` / `validateSeedWords`), called
+unconditionally at the top of the one production entry point every real
+caller goes through (`SeedWordsToBitString` / `seedWordsToBitString`), so
+it cannot be bypassed:
+
+- **1 to 256 words.**
+- **1 to 256 glyphs per word**, counted as Unicode code points (Go's
+  `utf8.RuneCountInString`, TS's `Array.from(word).length`) — not bytes,
+  fixing a latent bug in the old CLI check that silently shrank the true
+  limit for every multi-byte script.
+- **Every glyph must be one of the 256 characters in the DALOS
+  `CharacterMatrix`** — a closed, curated alphabet (digits, currency
+  signs, Latin + most Western/Central European diacritics, a Greek
+  subset, a Cyrillic subset), not "any UTF-8 character." Homoglyph
+  letters (Cyrillic/Greek letters that look like a Latin letter already
+  in the set) and all accented Greek vowels are deliberately excluded.
+
+**Breaking, on purpose:** `SeedWordsToBitString` (Go) now returns
+`(string, error)` instead of `string` — every caller (the CLI, the
+test-vector generator, any consumer) must handle the error. TypeScript's
+`seedWordsToBitString`/`fromSeedWords`/every registry primitive's
+`generateFromSeedWords` now throw `InvalidSeedWordsError` on invalid
+input instead of silently accepting it.
+
+**Frozen corpus impact, disclosed in full:** two of `v1_genesis.json`'s
+105 vectors (`sw-0005`, Cyrillic; `sw-0006`, Greek) used words containing
+glyphs outside the DALOS character set under the old, unenforced regime
+(`привет`/`мир`; `Γειά`/`σου`/`κόσμε`) — both would now fail validation.
+Replaced with in-charset equivalents (`жизнь`/`плющ`;
+`Δελτα`/`Σιγμα`/`Ωμεγα`); every other one of the 105 genesis vectors,
+plus all of `v1_historical.json` and `v2_rsa4096.json`, is byte-identical
+(diffed before re-pinning). New frozen SHA-256 for `v1_genesis.json`:
+`be12073a5b634457bed71b7b54fb6429186ff288f47ce483afbeff9f422ff84c`.
+(Also corrected an unrelated, pre-existing stale pin for
+`v1_adversarial.json` discovered while re-pinning — its committed content
+was unchanged, only the baseline hash in `go-ci.yml` was wrong.)
+
+Go's `Dalos.go` CLI no longer runs its own seed-word checks — it now
+delegates entirely to the shared validator, so its behavior and error
+wording match the library exactly.
+
+**Also in this release: RSA-4096 seed-bitstring length tightened to a
+closed allow-list.** The prior contract (any bitstring ≥ 128 characters,
+introduced earlier the same day) is replaced with an exact allow-list —
+`1024` (APOLLO) or `1600` (DALOS Genesis), nothing else, however long.
+Considered and rejected: a new entry point accepting an arbitrary custom
+string up to 65536 characters for RSA determinism directly. Decided
+against — RSA-4096's security comes from the 2048-bit prime search
+space, not seed length, so a longer or custom-length seed buys no real
+security margin, and an open-ended "any string, any length" path would
+be an unaudited entry point with no tie to either curve's own validated
+seed-word/bitmap/integer input pipeline. Gating to exactly `{1024, 1600}`
+keeps RSA-4096 generation structurally reachable only via APOLLO or
+DALOS Genesis. `RSA4096/stream.go`'s `allowedSeedBitStringLengths` /
+`ts/src/rsa4096/stream.ts`'s `ALLOWED_SEED_BIT_STRING_LENGTHS` replace
+the old `minSeedBitStringLen`/`MIN_SEED_BIT_STRING_LEN` floor constants.
+No frozen-corpus impact — every existing `v2_rsa4096.json` vector already
+used a 1600-bit DALOS seed.
+
+**451 tests pass** in TS (up from 436); 11 new Go tests for the seed-word
+validator's boundary conditions, plus Go's RSA4096 seed-length tests
+rewritten from "accepts multiple curve shapes" to "accepts exactly the
+two blessed lengths, rejects everything else including LETO/ARTEMIS
+lengths and a 65536-character string."
+
+---
+
 ## [4.1.0] — 2026-09-11
 
 **New primitive: deterministic RSA-4096 key generation for Arweave, from the same DALOS seed.**

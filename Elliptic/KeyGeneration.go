@@ -215,7 +215,17 @@ func (e *Ellipse) GenerateRandomBitsOnCurve() string {
     return binaryBuilder.String()
 }
 
-func (e *Ellipse) SeedWordsToBitString(SeedWords []string) string {
+// SeedWordsToBitString derives a bitstring from seed words. This is the
+// single production entry point for seed-word-based key generation in
+// the Go reference — every real caller (the CLI's -seed flag, the
+// testvector generator, any future consumer) goes through here, which
+// is why the seed-word contract (ValidateSeedWords: 1-256 words, each
+// 1-256 glyphs, every glyph in the 256-glyph DALOS CharacterMatrix) is
+// enforced right here rather than left to each caller to remember.
+func (e *Ellipse) SeedWordsToBitString(SeedWords []string) (string, error) {
+    if err := ValidateSeedWords(SeedWords); err != nil {
+        return "", err
+    }
     JoinedSeeds := strings.Join(SeedWords, " ")
     JoinedSeedsToByteSlice := []byte(JoinedSeeds)
     //Compute the Blake3 SumCustom output size. The safe-scalar size is NOT
@@ -231,7 +241,7 @@ func (e *Ellipse) SeedWordsToBitString(SeedWords []string) string {
     Hash5 := Blake3.SumCustom(Hash4, OutputSize)
     Hash6 := Blake3.SumCustom(Hash5, OutputSize)
     Hash7 := Blake3.SumCustom(Hash6, OutputSize)
-    return e.ConvertHashToBitString(Hash7)
+    return e.ConvertHashToBitString(Hash7), nil
 }
 
 // ConvertHashToBitString renders Hash as a big-endian bitstring of e.S bits, mirroring

@@ -43,7 +43,7 @@ type EllipseMethods interface {
     
     // VI Key Generation
     GenerateRandomBitsOnCurve() string
-    SeedWordsToBitString(SeedWords []string) string
+    SeedWordsToBitString(SeedWords []string) (string, error)
     ConvertHashToBitString(Hash []byte) string
     ValidateBitString(BitString string) (bool, bool, bool)
     // F-MED-016 (v4.0.2): added third return for failure reason. The

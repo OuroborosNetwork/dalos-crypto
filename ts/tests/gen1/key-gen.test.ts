@@ -347,7 +347,7 @@ describe('fromSeedWords (BYTE-IDENTITY END-TO-END)', () => {
   }, 60_000);
 
   it('Cyrillic seed words reproduce correctly', () => {
-    const v = seedWordsVectors().find((x) => x.input_words[0] === 'привет');
+    const v = seedWordsVectors().find((x) => x.input_words[0] === 'жизнь');
     expect(v).toBeDefined();
     const k = fromSeedWords(v!.input_words);
     expect(k.standardAddress).toBe(v!.standard_address);
@@ -355,7 +355,7 @@ describe('fromSeedWords (BYTE-IDENTITY END-TO-END)', () => {
   }, 30_000);
 
   it('Greek seed words reproduce correctly', () => {
-    const v = seedWordsVectors().find((x) => x.input_words[0] === 'Γειά');
+    const v = seedWordsVectors().find((x) => x.input_words[0] === 'Δελτα');
     expect(v).toBeDefined();
     const k = fromSeedWords(v!.input_words);
     expect(k.standardAddress).toBe(v!.standard_address);

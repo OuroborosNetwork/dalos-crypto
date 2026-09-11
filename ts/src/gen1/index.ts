@@ -84,6 +84,12 @@ export {
   convertToLetters,
   publicKeyToAddress,
   dalosAddressMaker,
+  validateSeedWords,
+  InvalidSeedWordsError,
+  MIN_SEED_WORDS,
+  MAX_SEED_WORDS,
+  MIN_SEED_WORD_GLYPHS,
+  MAX_SEED_WORD_GLYPHS,
 } from './hashing.js';
 
 // Bitmap input (Phase 4)

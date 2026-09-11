@@ -8,7 +8,7 @@
 > same custom seed phrase.
 
 [![npm](https://img.shields.io/npm/v/@ouronet/dalos-crypto.svg)](https://www.npmjs.com/package/@ouronet/dalos-crypto)
-[![tests](https://img.shields.io/badge/tests-431%20passing-brightgreen.svg)](#verification)
+[![tests](https://img.shields.io/badge/tests-447%20passing-brightgreen.svg)](#verification)
 [![license](https://img.shields.io/badge/license-UNLICENSED-blue.svg)](https://github.com/StoaChain/DALOS_Crypto)
 
 ---
@@ -64,10 +64,28 @@ reference's [105-vector test corpus](https://github.com/StoaChain/DALOS_Crypto/b
 | `bitString` | 1600-bit `0`/`1` string | research, direct scalar, paper wallets |
 | `integerBase10` | decimal integer (< Q) | numeric private keys |
 | `integerBase49` | base-49 string (< Q) | DALOS-native compact integer form |
-| `seedWords` | array of UTF-8 words | **not** BIP-39 — see below |
+| `seedWords` | array of words (256-glyph DALOS charset) | **not** BIP-39 — see below |
 | `bitmap` | 40×40 `Bitmap` | hand-painted entropy (1600 pixels = 1600 bits) |
 
-**`seedWords` is deliberately not a BIP-39 mnemonic, and the difference is the point.** BIP-39 requires picking from one fixed, English-only, ~2048-word dictionary, in a fixed count (12/15/18/21/24), with a built-in checksum — you can't type a word that isn't on the list, and you can't use your own language. DALOS's seed-word path has **no dictionary at all**: any UTF-8 words, **up to 256 of them**, each **up to 256 glyphs**, in **20+ languages natively** (Albanian, Bosnian, Croatian, Czech, Estonian, Finnish, French, German, Greek, Icelandic, Italian, Kurdish, Norwegian, Polish, Portuguese, Romanian, Serbian, Spanish, Swedish, Turkish, full Cyrillic, and more — any UTF-8 input works, since the seven-fold Blake3 hash underneath doesn't care about charset). A phrase can be as short as a handful of words or as long as a full paragraph, in whatever language the person actually thinks in — strictly more flexible than a fixed dictionary, not a variant of one.
+**`seedWords` is deliberately not a BIP-39 mnemonic, and the difference is the point.** BIP-39 requires picking from one fixed, English-only, ~2048-word dictionary, in a fixed count (12/15/18/21/24), with a built-in checksum — you can't type a word that isn't on the list. DALOS's seed-word path has **no fixed *word* dictionary**: any sequence of glyphs drawn from DALOS's own 256-character set, up to 256 words, each up to 256 glyphs, is a valid phrase — there's no list of permitted whole words. A phrase can be as short as a handful of words or as long as 256 of them — strictly more flexible than a fixed word list, just built on a fixed *character* set instead of arbitrary Unicode (see the contract below for exactly what that means).
+
+**Final contract (settled 2026-09-11), enforced identically everywhere — Go, TypeScript, and the CLI all call the same validator (`validateSeedWords` / `Elliptic.ValidateSeedWords`), so what's rejected on one side is rejected on the other, with the same error:**
+
+- **1 to 256 words.**
+- **1 to 256 glyphs per word** (counted as Unicode code points, matching Go's rune count — not UTF-16 code units or bytes).
+- **Every glyph must be one of the 256 characters in `CHARACTER_MATRIX_FLAT`** (`ts/src/gen1/character-matrix.ts`, mirrors `Elliptic/CharacterMatrix.go`) — digits, currency signs, the full Latin alphabet plus most Western/Central European diacritics, a curated Greek subset, and a curated Cyrillic subset. **This is a closed alphabet, not "any UTF-8 character."** In particular: Cyrillic and Greek letters that are visual homoglyphs of a Latin letter already in the set are deliberately excluded (so most everyday Cyrillic words — e.g. `привет` — contain at least one excluded letter), and there are no accented Greek vowels at all. Calling `seedWordsToBitString`/`fromSeedWords`/any registry primitive's `generateFromSeedWords` with input outside this contract throws `InvalidSeedWordsError` (exported from `/gen1`) before any hashing happens — it is not possible to reach key generation with invalid seed-word input.
+
+```ts
+import { validateSeedWords, InvalidSeedWordsError } from "@ouronet/dalos-crypto/gen1";
+
+try {
+  validateSeedWords(userTypedWords); // same gate generateFromSeedWords runs internally
+} catch (e) {
+  if (e instanceof InvalidSeedWordsError) {
+    // e.message pinpoints which word/character/count failed — surface it directly.
+  }
+}
+```
 
 ### Schnorr v2 signatures
 
@@ -82,19 +100,48 @@ Matches the Go reference's key-file encryption format exactly — the TS
 port additionally constrains the IV nibble to avoid a latent Go-side
 edge case (≈6% failure rate in Go; 0% in TS).
 
-### Historical curves (since `v1.1.0`)
+### Historical curves (since `v1.1.0`, production-ready since `v3.0.0`)
 
 Three extra curves from the author's original Cryptoplasm research phase,
 named after the Delian family. Same structural family as DALOS (Twisted
-Edwards, cofactor 4, negative `d`), smaller primes for research /
-pedagogy / benchmarking. **Not production primitives** — the registry
-never exposes them.
+Edwards, cofactor 4, negative `d`), smaller primes than DALOS Genesis.
+**As of `v3.0.0` all three are full production `CryptographicPrimitive`s**
+— complete key-gen across all 5 input paths (random / bitString /
+integerBase10 / integerBase49 / seedWords) plus Schnorr v2 sign/verify,
+with their own frozen byte-identity corpus
+(`testvectors/v1_historical.json`). The only thing "historical" about
+them today is that they predate DALOS Genesis, not that they're
+unsupported. They are **not auto-registered** in
+`createDefaultRegistry()` — import them explicitly from `/registry` and
+use them directly (or call `registry.register(Apollo)` if you need
+`registry.detect()` to recognise their addresses too).
 
-| Curve | Safe-scalar `S` | Prime `P` | Keyspace |
-|---|---|---|---|
-| `LETO` | 545 bits | `2^551 + 335` | 2⁵⁴⁵ ≈ 1.15 × 10¹⁶⁴ |
-| `ARTEMIS` | 1023 bits | `2^1029 + 639` | 2¹⁰²³ ≈ 9.0 × 10³⁰⁷ |
-| `APOLLO` | 1024 bits | `2^1029 + 639` | 2¹⁰²⁴ ≈ 1.8 × 10³⁰⁸ |
+| Curve | Safe-scalar `S` | Prime `P` | Keyspace | Standard / smart prefix |
+|---|---|---|---|---|
+| `LETO` | 545 bits | `2^551 + 335` | 2⁵⁴⁵ ≈ 1.15 × 10¹⁶⁴ | `Ł.` / `Λ.` |
+| `ARTEMIS` | 1023 bits | `2^1029 + 639` | 2¹⁰²³ ≈ 9.0 × 10³⁰⁷ | `R.` / `Ř.` |
+| `APOLLO` | 1024 bits | `2^1029 + 639` | 2¹⁰²⁴ ≈ 1.8 × 10³⁰⁸ | `₱.` / `Π.` |
+
+`APOLLO`'s 1024-bit derivation is also the other seed length the
+RSA-4096 package accepts (see below) — a byte-aligned alternative to
+DALOS Genesis's 1600 bits, from the exact same seed words:
+
+```ts
+import { Apollo } from "@ouronet/dalos-crypto/registry";
+import { generateFromBitStringAsync } from "@ouronet/dalos-crypto/rsa4096";
+
+const seedWords = ["korrigan", "petrichor", "solstice", "yonder"];
+
+// EC derivation: instant, synchronous.
+const apolloKey = Apollo.generateFromSeedWords(seedWords);
+console.log(apolloKey.privateKey.bitString.length); // 1024
+console.log(apolloKey.standardAddress);              // "₱.xxxxx…"
+
+// Feed the same 1024-bit seed into the RSA-4096 prime search (async —
+// takes low-single-digit seconds; see "Progress reporting" below).
+const rsaKey = await generateFromBitStringAsync(apolloKey.privateKey.bitString);
+console.log(rsaKey.address); // 43-char Arweave address
+```
 
 See [`docs/HISTORICAL_CURVES.md`](https://github.com/StoaChain/DALOS_Crypto/blob/main/docs/HISTORICAL_CURVES.md)
 for the full provenance, audit log, and usage.
@@ -226,10 +273,17 @@ const result = await generateFromBitStringAsync(bits1600, onProgress);
 console.log(result.address); // 43-char base64url Arweave address
 ```
 
-The seed isn't hardcoded to DALOS Genesis's 1600 bits either — any
-DALOS_Crypto curve's safe-scalar bitstring works unchanged (e.g. APOLLO's
-1024 bits), since the construction has no structural opinion on seed
-length; only a 128-bit sanity floor is enforced.
+The seed isn't hardcoded to DALOS Genesis's 1600 bits — APOLLO's 1024-bit
+safe-scalar bitstring works too. **But the accepted lengths are a closed
+allow-list, not an open floor:** exactly `1024` or exactly `1600`, and
+nothing else, however long. `generateFromBitString`/`generateFromBitStringAsync`
+throw for any other length (settled 2026-09-11 — an earlier, wider "any
+length ≥ 128 bits" contract was deliberately tightened). RSA-4096's
+security comes from the 2048-bit prime search space, not seed length, so
+a longer or custom-length seed buys nothing; gating to exactly these two
+lengths also ties every RSA seed to one of DALOS_Crypto's two production
+EC curves' own already-validated input pipelines, rather than accepting
+arbitrary unaudited bytes.
 
 See [`.docs/deterministic-rsa4096-from-seed.md`](https://github.com/OuroborosNetwork/dalos-crypto/blob/main/.docs/deterministic-rsa4096-from-seed.md)
 for the full design history, empirical research, and everything checked
@@ -396,7 +450,7 @@ implementations consume the seed identically, not just coincidentally
 agree on the final key). Run locally:
 
 ```bash
-npm test   # 431 tests, ~30s
+npm test   # 447 tests, ~30-60s
 ```
 
 See the Go-reference corpora: [`testvectors/v1_genesis.json`](https://github.com/StoaChain/DALOS_Crypto/blob/main/testvectors/v1_genesis.json)

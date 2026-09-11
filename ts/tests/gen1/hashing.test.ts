@@ -24,11 +24,17 @@ import {
   convertToLetters,
   dalosAddressComputer,
   dalosAddressMaker,
+  InvalidSeedWordsError,
+  MAX_SEED_WORD_GLYPHS,
+  MAX_SEED_WORDS,
+  MIN_SEED_WORD_GLYPHS,
+  MIN_SEED_WORDS,
   parseBigIntInBase,
   publicKeyToAddress,
   publicKeyToAffineCoords,
   seedWordsToBitString,
   toUtf8Bytes,
+  validateSeedWords,
 } from '../../src/gen1/hashing.ts';
 import { bitmapVectors, bitstringVectors, schnorrVectors, seedWordsVectors } from '../fixtures.ts';
 
@@ -159,13 +165,13 @@ describe('seedWordsToBitString (BYTE-IDENTITY vs Go corpus)', () => {
   });
 
   it('Unicode seed words round-trip correctly (Cyrillic)', () => {
-    const v = vectors.find((x) => x.input_words[0] === 'привет');
+    const v = vectors.find((x) => x.input_words[0] === 'жизнь');
     expect(v).toBeDefined();
     expect(seedWordsToBitString(v!.input_words)).toBe(v!.derived_bitstring);
   });
 
   it('Unicode seed words round-trip correctly (Greek)', () => {
-    const v = vectors.find((x) => x.input_words[0] === 'Γειά');
+    const v = vectors.find((x) => x.input_words[0] === 'Δελτα');
     expect(v).toBeDefined();
     expect(seedWordsToBitString(v!.input_words)).toBe(v!.derived_bitstring);
   });
@@ -284,5 +290,67 @@ describe('publicKeyToAddress (body only, no prefix) — sanity', () => {
       // standard_address is "Ѻ." + body
       expect(v.standard_address.slice(2)).toBe(body);
     }
+  });
+});
+
+// ============================================================================
+// validateSeedWords — the final restriction level (settled 2026-09-11):
+// 1-256 words, each 1-256 glyphs, every glyph in the 256-glyph DALOS
+// character set. Mirrors Elliptic.ValidateSeedWords glyph-for-glyph.
+// ============================================================================
+describe('validateSeedWords / seedWordsToBitString input gate', () => {
+  it('accepts the boundary minimum: 1 word, 1 glyph', () => {
+    expect(() => validateSeedWords(['a'])).not.toThrow();
+    expect(MIN_SEED_WORDS).toBe(1);
+    expect(MIN_SEED_WORD_GLYPHS).toBe(1);
+  });
+
+  it('accepts the boundary maximum: 256 words, each 256 glyphs', () => {
+    const words = Array.from({ length: MAX_SEED_WORDS }, () => 'a'.repeat(MAX_SEED_WORD_GLYPHS));
+    expect(() => validateSeedWords(words)).not.toThrow();
+  });
+
+  it('rejects 0 words', () => {
+    expect(() => validateSeedWords([])).toThrow(InvalidSeedWordsError);
+  });
+
+  it('rejects 257 words', () => {
+    const words = Array.from({ length: MAX_SEED_WORDS + 1 }, () => 'a');
+    expect(() => validateSeedWords(words)).toThrow(InvalidSeedWordsError);
+  });
+
+  it('rejects an empty-string word (0 glyphs)', () => {
+    expect(() => validateSeedWords(['hello', ''])).toThrow(InvalidSeedWordsError);
+  });
+
+  it('rejects a word of 257 glyphs', () => {
+    expect(() => validateSeedWords(['a'.repeat(MAX_SEED_WORD_GLYPHS + 1)])).toThrow(
+      InvalidSeedWordsError,
+    );
+  });
+
+  it('rejects a character outside the 256-glyph DALOS set (e.g. Chinese)', () => {
+    expect(() => validateSeedWords(['中文'])).toThrow(InvalidSeedWordsError);
+  });
+
+  it('rejects a Cyrillic letter that is excluded from the matrix as a Latin homoglyph (е.g. а, е, о, р, с)', () => {
+    // 'привет' contains р and е, both excluded from the DALOS Cyrillic
+    // subset specifically because they're homoglyphs of Latin letters
+    // already in the matrix (р looks like Latin p, е looks like Latin e).
+    expect(() => validateSeedWords(['привет'])).toThrow(InvalidSeedWordsError);
+  });
+
+  it('rejects a Greek letter excluded as a Latin homoglyph (ο, υ) or an accented vowel (ά)', () => {
+    expect(() => validateSeedWords(['κόσμε'])).toThrow(InvalidSeedWordsError);
+  });
+
+  it('accepts the in-charset Cyrillic/Greek replacements used by the frozen corpus', () => {
+    expect(() => validateSeedWords(['жизнь', 'плющ'])).not.toThrow();
+    expect(() => validateSeedWords(['Δελτα', 'Σιγμα', 'Ωμεγα'])).not.toThrow();
+  });
+
+  it('seedWordsToBitString throws the same InvalidSeedWordsError for bad input', () => {
+    expect(() => seedWordsToBitString([])).toThrow(InvalidSeedWordsError);
+    expect(() => seedWordsToBitString(['привет'])).toThrow(InvalidSeedWordsError);
   });
 });

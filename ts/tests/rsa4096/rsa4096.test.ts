@@ -20,6 +20,7 @@ import {
   generateFromBitString,
   generateFromBitStringAsync,
   selfCheckTextbookRSA,
+  validateSeedBitString,
 } from '../../src/rsa4096/index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -176,13 +177,14 @@ describe('RSA4096 progress reporting -- for building a UI progress bar', () => {
   });
 });
 
-describe('RSA4096 seed length is not hardcoded to DALOS Genesis', () => {
-  // Confirms the pipeline works unchanged for APOLLO's 1024-bit safe
-  // scalar (not just DALOS Genesis's 1600), since Blake3-XOF has no
-  // structural opinion on input length -- see stream.ts's
-  // MIN_SEED_BIT_STRING_LEN doc comment. Does not check against a frozen
-  // vector (there isn't one for this length); just confirms it succeeds
-  // and produces a well-formed key.
+describe('RSA4096 seed length is gated to exactly the two blessed curve lengths', () => {
+  // Settled 2026-09-11: the earlier "any length >= 128" floor was
+  // tightened to a closed allow-list -- see stream.ts's
+  // ALLOWED_SEED_BIT_STRING_LENGTHS doc comment for the reasoning (RSA
+  // security comes from the 2048-bit prime search space, not seed
+  // length; gating to exactly {1024, 1600} ties every RSA seed to one of
+  // the two curves' own already-validated pipelines, instead of an
+  // open-ended, unaudited "any custom string" input path).
   it('accepts a 1024-bit (APOLLO-shaped) seed and produces a valid key', () => {
     const apolloSeed = '10'.repeat(512); // 1024 characters of '0'/'1'
     expect(apolloSeed.length).toBe(1024);
@@ -193,7 +195,25 @@ describe('RSA4096 seed length is not hardcoded to DALOS Genesis', () => {
     expect(() => selfCheckTextbookRSA(result.key)).not.toThrow();
   });
 
-  it('rejects a seed shorter than the sanity floor', () => {
-    expect(() => generateFromBitString('01'.repeat(63))).toThrow(); // 126 chars, floor is 128
+  it('rejects a seed shorter than 1024', () => {
+    expect(() => validateSeedBitString('01'.repeat(63))).toThrow(); // 126 chars
+  });
+
+  it('rejects lengths strictly between 1024 and 1600', () => {
+    expect(() => validateSeedBitString('0'.repeat(1300))).toThrow();
+  });
+
+  it('rejects other DALOS_Crypto curves\' safe-scalar lengths (LETO 545, ARTEMIS 1023)', () => {
+    expect(() => validateSeedBitString('0'.repeat(545))).toThrow();
+    expect(() => validateSeedBitString('0'.repeat(1023))).toThrow();
+  });
+
+  it('rejects an arbitrary long custom string (65536 chars) -- no unbounded input path', () => {
+    expect(() => validateSeedBitString('01'.repeat(32768))).toThrow();
+  });
+
+  it('rejects one bit over each blessed length', () => {
+    expect(() => validateSeedBitString('0'.repeat(1025))).toThrow();
+    expect(() => validateSeedBitString('0'.repeat(1601))).toThrow();
   });
 });

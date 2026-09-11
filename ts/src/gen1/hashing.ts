@@ -46,6 +46,75 @@ export function toUtf8Bytes(s: string): Uint8Array {
   return utf8.encode(s);
 }
 
+// ============================================================================
+// Seed-word validation — the ONE contract, mirrored byte-for-byte from
+// Elliptic/SeedWordsValidation.go
+// ============================================================================
+
+/** Fewest words a seed phrase may contain. */
+export const MIN_SEED_WORDS = 1;
+/** Most words a seed phrase may contain. */
+export const MAX_SEED_WORDS = 256;
+/** Fewest glyphs a single seed word may contain. */
+export const MIN_SEED_WORD_GLYPHS = 1;
+/** Most glyphs a single seed word may contain. */
+export const MAX_SEED_WORD_GLYPHS = 256;
+
+/** O(1) membership set built once from the 256-glyph DALOS alphabet. */
+const CHARACTER_SET: ReadonlySet<string> = new Set(CHARACTER_MATRIX_FLAT);
+
+/**
+ * Thrown by `validateSeedWords` (and therefore by `seedWordsToBitString`/
+ * `fromSeedWords`) when seed-word input violates the DALOS contract:
+ * 1-256 words, each 1-256 glyphs, every glyph one of the 256 in the
+ * DALOS character set.
+ */
+export class InvalidSeedWordsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidSeedWordsError';
+  }
+}
+
+/**
+ * The single, canonical seed-word input gate — mirrors Go's
+ * `Elliptic.ValidateSeedWords` glyph-for-glyph. Final restriction level
+ * (settled 2026-09-11): 1-256 words, each 1-256 glyphs (counted as
+ * Unicode code points via `Array.from`, matching Go's `utf8.RuneCount-
+ * InString`, not UTF-16 code units), every glyph one of the 256 glyphs
+ * in the DALOS CharacterMatrix — a curated address-rendering alphabet,
+ * not "any UTF-8 character". Within that range, word CHOICE is entirely
+ * the caller's own responsibility.
+ *
+ * Called automatically by `seedWordsToBitString` (and therefore by
+ * `fromSeedWords` and every registry primitive's `generateFromSeedWords`)
+ * — every production entry point goes through here, so this is
+ * impossible to bypass from a real caller.
+ */
+export function validateSeedWords(seedWords: readonly string[]): void {
+  if (seedWords.length < MIN_SEED_WORDS || seedWords.length > MAX_SEED_WORDS) {
+    throw new InvalidSeedWordsError(
+      `seed words: expected between ${MIN_SEED_WORDS} and ${MAX_SEED_WORDS} words, got ${seedWords.length}`,
+    );
+  }
+  for (let i = 0; i < seedWords.length; i++) {
+    const word = seedWords[i] ?? '';
+    const glyphs = Array.from(word);
+    if (glyphs.length < MIN_SEED_WORD_GLYPHS || glyphs.length > MAX_SEED_WORD_GLYPHS) {
+      throw new InvalidSeedWordsError(
+        `seed word ${i} (${JSON.stringify(word)}): expected between ${MIN_SEED_WORD_GLYPHS} and ${MAX_SEED_WORD_GLYPHS} glyphs, got ${glyphs.length}`,
+      );
+    }
+    for (const glyph of glyphs) {
+      if (!CHARACTER_SET.has(glyph)) {
+        throw new InvalidSeedWordsError(
+          `seed word ${i} (${JSON.stringify(word)}): character ${JSON.stringify(glyph)} is not one of the 256 glyphs in the DALOS character set`,
+        );
+      }
+    }
+  }
+}
+
 /**
  * Parse a string of digits in the given base (10 or 49) to a bigint.
  *
@@ -95,6 +164,7 @@ export function seedWordsToBitString(
   seedWords: readonly string[],
   e: Ellipse = DALOS_ELLIPSE,
 ): string {
+  validateSeedWords(seedWords);
   const joined = seedWords.join(' ');
   const bytes = toUtf8Bytes(joined);
   // Byte-align the hash output size. DALOS has s=1600 → 200 bytes

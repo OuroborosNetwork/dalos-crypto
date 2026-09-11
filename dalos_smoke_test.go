@@ -72,17 +72,20 @@ func TestCLI_InvalidIntegerFlag_ExitsNonZeroWithError(t *testing.T) {
 }
 
 // TestCLI_SeedWord_TooLong_ExitsWithError is the regression guard for the
-// Dalos.go:149-153 seed-word length validator. Audit cycle 2026-05-04
-// (F-API-002) found the error message claimed "between 3 and 256" while
-// the check was `< 1 || > 256` — the function lied about its own contract.
-// Fix: corrected the message to "between 1 and 256" matching the actual
-// validation, which itself matches the documented contract in
-// README.md:71 (4-256 words, each 1-256 chars).
+// seed-word length validator. Originally guarded Dalos.go's own inline
+// check (audit cycle 2026-05-04, F-API-002, which found the error message
+// claimed "between 3 and 256" while the check was `< 1 || > 256`). As of
+// the 2026-09-11 seed-word-contract hotfix, the CLI no longer runs its
+// own check at all — it delegates to the single shared validator,
+// Elliptic.ValidateSeedWords (Elliptic/SeedWordsValidation.go), which is
+// also what the TS port and any other caller uses. The final contract:
+// 1-256 words, each 1-256 glyphs, every glyph in the 256-glyph DALOS
+// character set (see README.md's "Personalisable Seed Words" section).
 //
 // Coverage strategy: drive the rejection branch by passing a single
-// 257-character word. Asserts (1) non-zero exit, (2) error message
-// uses the corrected "between 1 and 256" wording (catches a future
-// regression that re-introduces the "between 3 and 256" wrong text).
+// 257-glyph word. Asserts (1) non-zero exit, (2) error message reports
+// the correct "between 1 and 256 glyphs" bound (catches a future
+// regression that re-introduces a wrong bound or byte-vs-glyph miscount).
 func TestCLI_SeedWord_TooLong_ExitsWithError(t *testing.T) {
     ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
@@ -108,11 +111,11 @@ func TestCLI_SeedWord_TooLong_ExitsWithError(t *testing.T) {
     }
 
     output := string(out)
-    // Pin the corrected wording; explicitly forbid the wrong "between 3"
+    // Pin the correct bound; explicitly forbid the old, wrong "between 3"
     // wording so a future regression that flips it back fails this test.
-    const wantCorrect = "must be between 1 and 256 characters long"
+    const wantCorrect = "expected between 1 and 256 glyphs"
     if !strings.Contains(output, wantCorrect) {
-        t.Errorf("subprocess output missing corrected wording %q\n  got: %s", wantCorrect, output)
+        t.Errorf("subprocess output missing expected wording %q\n  got: %s", wantCorrect, output)
     }
     const forbidWrong = "between 3 and 256"
     if strings.Contains(output, forbidWrong) {

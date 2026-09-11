@@ -6,6 +6,58 @@ This file captures the verbatim output of the Go validation suite against the DA
 
 ---
 
+## Run — 2026-09-11, later yet again (RSA4096 seed-bitstring length tightened to a closed allow-list)
+
+### What changed
+
+Considered adding a new entry point accepting an arbitrary custom string up to 65536 characters for RSA-4096 determinism directly. Decided against, and tightened the existing contract instead: `RSA4096/stream.go`'s seed-bitstring validation moved from "any length ≥ 128 characters" (a floor) to an exact allow-list of `{1024, 1600}` (APOLLO, DALOS Genesis) — nothing else, however long. Reasoning: RSA-4096's security comes from the 2048-bit prime search space, not seed length, so a longer or custom-length seed adds no real margin; gating to exactly these two lengths ties every RSA seed to one of DALOS_Crypto's two production EC curves' own already-validated input pipelines (seed-word charset/count checks, etc.), closing off an unaudited "any string, any length" path. `allowedSeedBitStringLengths`/`ALLOWED_SEED_BIT_STRING_LENGTHS` replace `minSeedBitStringLen`/`MIN_SEED_BIT_STRING_LEN`.
+
+### Checks
+
+| Check | Result |
+|-------|--------|
+| `v2_rsa4096.json` byte-identity (extended-elided) | ✅ UNCHANGED: `0d074fca0f14a5ae6cbcdae571b8d2a7df78dfef12216ac9f77e5f043d751bac` — every existing vector already used a 1600-bit DALOS seed, so no frozen output was ever at risk. |
+| `go build ./...` / `go vet ./...` | ✅ PASS |
+| `go test ./RSA4096/...` | ✅ PASS — `TestNewSeedStream_AcceptsMultipleCurveShapes` renamed/rewritten to `TestNewSeedStream_AcceptsExactlyTheTwoBlessedLengths`; `TestNewSeedStream_RejectsInvalidSeed` extended with LETO (545), ARTEMIS (1023), and a 65536-character string, all now correctly rejected (all three used to pass under the old floor-only check) |
+| `npm test` (TS) | ✅ 451/451 passing (up from 447 — 6 new/rewritten tests in `rsa4096.test.ts`'s seed-length describe block) |
+| `npm run typecheck` | ✅ PASS |
+
+### What this run proves
+
+The tightened gate rejects exactly the cases it should (other curves' safe-scalar lengths, an arbitrary long custom string) while continuing to accept both real production lengths without any change to their output — confirmed by the unchanged frozen corpus hash, not just by the new tests passing.
+
+---
+
+## Run — 2026-09-11, later still (seed-word contract hotfix: final restriction level enforced everywhere)
+
+### What changed
+
+Settled a gap surfaced by this project's own documentation-accuracy review: seed-word input had no contract enforced anywhere in the library (Go or TS), only inconsistent, buggy checks in the Go CLI's `-seed` flag handler. Final contract, now enforced by a single shared validator per language (`Elliptic.ValidateSeedWords`, `ts/src/gen1/hashing.ts`'s `validateSeedWords`), called unconditionally inside `SeedWordsToBitString`/`seedWordsToBitString` — the one production entry point every real caller goes through: 1-256 words, each 1-256 glyphs (Unicode code points, not bytes — fixes a latent byte-vs-glyph miscount in the old CLI check), every glyph one of the 256 characters in the DALOS `CharacterMatrix` (a closed, curated alphabet — not "any UTF-8 character"). `Dalos.go`'s CLI now delegates entirely to the shared validator instead of running its own separate checks. `SeedWordsToBitString` (Go) changed signature to `(string, error)`; TS throws `InvalidSeedWordsError`.
+
+### Corpus impact, disclosed in full
+
+Two of `v1_genesis.json`'s 105 vectors used seed words containing glyphs outside the DALOS character set under the old, unenforced regime: `sw-0005` (`привет`/`мир` — contains Cyrillic р/е, both excluded as Latin homoglyphs) and `sw-0006` (`Γειά`/`σου`/`κόσμε` — contains accented Greek vowels and ο/υ, none present in the matrix). Both would now fail `ValidateSeedWords`. Replaced with in-charset equivalents chosen letter-by-letter against `Elliptic/CharacterMatrix.go` (`жизнь`/`плющ`; `Δελτα`/`Σιγμα`/`Ωμεγα` — the Greek spellings of Delta/Sigma/Omega). Every other one of the 105 genesis vectors — all 50 bitstring, the other 13 seed-word, all 20 bitmap, all 20 Schnorr — is byte-identical (diffed line-by-line before re-pinning; only `sw-0005`/`sw-0006`'s content fields differ).
+
+### Checks
+
+| Check | Result |
+|-------|--------|
+| `v1_genesis.json` byte-identity (extended-elided) | Changed as expected (2 of 105 vectors' input words were out-of-contract under the new rule) — new value `be12073a5b634457bed71b7b54fb6429186ff288f47ce483afbeff9f422ff84c`. All other 103 vectors confirmed byte-identical via diff before re-pinning. |
+| `v1_historical.json` byte-identity (extended-elided) | ✅ UNCHANGED: `80c93f4d4956e01236808f81f518d17eeaad431f4fedb7c26233d2508f06e68b` |
+| `v2_rsa4096.json` byte-identity (extended-elided) | ✅ UNCHANGED: `0d074fca0f14a5ae6cbcdae571b8d2a7df78dfef12216ac9f77e5f043d751bac` (`rsa4096-sw-01` uses ASCII fixture words, unaffected) |
+| `v1_adversarial.json` byte-identity (extended-elided) | Corrected an unrelated, pre-existing stale pin discovered opportunistically: committed content was unchanged, but the baseline in `go-ci.yml` didn't match its own elided hash even before this change. New (correct) value: `582025b173de7fb900d65d5b5ad3933ef9abdbc460681c2305b2fadd1aef0bf9`. |
+| `go build ./...` / `go vet ./...` | ✅ PASS |
+| `go test ./...` | ✅ PASS except one pre-existing, unrelated failure in `keystore` (`TestExportPrivateKey_FileCreateFailure_ReturnsError` — a file-collision-protection ordering issue predating this change, not touched here) |
+| New Go tests (`Elliptic/SeedWordsValidation_test.go`) | ✅ 11/11 passing — boundary min/max, rejection of 0/257 words, 0/257-glyph words, out-of-matrix characters (Chinese, excluded Cyrillic/Greek homoglyphs), acceptance of the new in-charset fixtures |
+| `npm test` (TS) | ✅ 447/447 passing (up from 436 — 11 new `validateSeedWords`/`seedWordsToBitString` gate tests, plus 4 existing tests updated to reference the new in-charset fixtures) |
+| `npm run typecheck` | ✅ PASS |
+
+### What this run proves
+
+The seed-word contract is now identical and unbypassable in both languages — the same input either succeeds identically or fails with an equivalent error on both sides, everywhere it's called from (CLI, library, and by extension any UI built on either). The frozen-corpus change is disclosed and justified rather than silent: exactly 2 of 105 vectors changed, for a stated reason, with every other vector's byte-identity proven unperturbed.
+
+---
+
 ## Run — 2026-09-11, later the same day (RSA4096: 64→100 Miller-Rabin rounds, progress API, seed-length generalization)
 
 ### What changed

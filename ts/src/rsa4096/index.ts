@@ -15,7 +15,11 @@
  * Copyright (C) 2026 AncientHoldings GmbH. All rights reserved.
  */
 
-export { newSeedStream, validateSeedBitString, MIN_SEED_BIT_STRING_LEN } from './stream.js';
+export {
+  newSeedStream,
+  validateSeedBitString,
+  ALLOWED_SEED_BIT_STRING_LENGTHS,
+} from './stream.js';
 export { generateCandidate, CANDIDATE_BITS, CANDIDATE_BYTES } from './candidate.js';
 export { passesTrialDivision, SMALL_PRIME_COUNT } from './primes.js';
 export { isProbablyPrime, MILLER_RABIN_ROUNDS } from './millerrabin.js';

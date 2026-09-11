@@ -65,13 +65,48 @@ See [`AUDIT.md § 1`](AUDIT.md#1-mathematical-verification) for full detail and 
 
 ### 2. Personalisable Seed Words
 
-One of Ouro-Network's signature features: **user-defined seed phrases**.
+One of Ouro-Network's signature features: **user-defined seed phrases**,
+drawn from DALOS's own 256-glyph character set (the same alphabet used
+to render `Ѻ.`/`Σ.` addresses) rather than a fixed word dictionary.
 
-- **Multilingual** — 20+ languages supported (Albanian, Bosnian, Croatian, Czech, Estonian, Finnish, French, German, Greek, Icelandic, Italian, Kurdish, Norwegian, Polish, Portuguese, Romanian, Serbian, Spanish, Swedish, Turkish, plus full Cyrillic)
-- **Flexible length** — 4 to 256 words, each 1 to 256 characters
-- **Memorisable** — personalised phrases leverage the brain's natural retention of meaningful content
+**Final contract (settled 2026-09-11), enforced identically everywhere
+in the codebase — the Go reference, the TS port, and therefore the CLI
+and every downstream caller — by a single shared validator
+(`Elliptic.ValidateSeedWords` / `validateSeedWords`):**
 
-**This is deliberately not a BIP-39 mnemonic, and the difference matters.** BIP-39 requires choosing words from one fixed, English-only dictionary of ~2048 entries, in a fixed count (12/15/18/21/24), with a built-in checksum — you cannot type a word that isn't on the list, and you cannot use your own language. DALOS's seed-word path has **no dictionary at all**: any UTF-8 words, up to 256 of them, each up to 256 glyphs, in any of 20+ languages natively (the seven-fold Blake3 hash underneath is charset-agnostic, so any UTF-8 input works even beyond the explicitly-tested language list). Maximum flexibility, not a variant of a fixed list.
+- **1 to 256 words.**
+- **1 to 256 glyphs per word.**
+- **Every glyph must be one of the 256 characters in the DALOS
+  CharacterMatrix** — digits, currency signs, the full Latin alphabet
+  plus most Western/Central European diacritics (French, German,
+  Spanish, Czech, Polish, Romanian, Croatian, Nordic, Baltic, and more),
+  a curated Greek subset, and a curated Cyrillic subset. **This is a
+  closed, specific 256-character alphabet, not "any UTF-8 character"** —
+  the exact glyphs are enumerated in [`Elliptic/CharacterMatrix.go`](Elliptic/CharacterMatrix.go)
+  / [`ts/src/gen1/character-matrix.ts`](ts/src/gen1/character-matrix.ts).
+  Two things worth knowing before typing a phrase in Greek or Cyrillic:
+  the matrix deliberately **excludes** Greek/Cyrillic letters that are
+  visual homoglyphs of Latin letters already in the set (so Cyrillic
+  is a ~25-of-33-letter subset, Greek small letters exclude ο/υ, Greek
+  capitals exclude every letter that looks Latin), and it has **no
+  accented Greek vowels at all** (ά, έ, ή, ί, ό, ύ, ώ — none of these
+  are present, only the unaccented forms that survive the homoglyph
+  exclusion above). A phrase that uses excluded letters will be rejected; this is
+  enforced identically in Go and TypeScript, so what fails on one side
+  fails on the other, with the same error.
+- **Memorisable** — personalised phrases leverage the brain's natural
+  retention of meaningful content, within that alphabet.
+
+**This is deliberately not a BIP-39 mnemonic, and the difference
+matters.** BIP-39 requires choosing words from one fixed, English-only
+dictionary of ~2048 entries, in a fixed count (12/15/18/21/24), with a
+built-in checksum — you cannot type a word that isn't on the list. DALOS
+has **no fixed *word* dictionary** — any sequence of glyphs from the
+256-character set, up to 256 words, each up to 256 glyphs, is a valid
+seed phrase; there is no list of permitted whole words to pick from.
+The trade-off for that flexibility is a fixed *character* set instead of
+a fixed word list — still categorically more flexible than BIP-39's
+closed 2048-word list, just not "arbitrary Unicode."
 
 ### 3. Demiourgos Account Structure
 
@@ -98,7 +133,7 @@ The same 1600-bit seed that produces a DALOS Genesis EC keypair can also determi
 
 **Zero real entropy anywhere in that chain, verified by grepping the whole dependency graph** — this package's own code, the Blake3 package it calls into, and (TS side) `@noble/hashes`'s underlying `blake3`/`sha2` — not asserted from design intent alone.
 
-Validated against real, independent code: the actual `arweave-core` package's `importKeyfile()`/`addressOf()`, and Node's native WebCrypto RSA-PSS sign+verify — not just internal self-checks. Generation is a one-time-per-seed operation (not a per-transaction cost) and exposes a purely-observational progress-reporting API (plus, on the TypeScript side, an event-loop-yielding async variant) so a UI can render a live, mathematically-grounded progress bar during the multi-second search — the completion estimate is a real geometric-distribution CDF (`1-(1-p)^attempts`), not a fake animation. The seed itself isn't hardcoded to DALOS Genesis's 1600 bits either — any DALOS_Crypto curve's safe-scalar bitstring works (e.g. APOLLO's 1024 bits), since the construction has no structural opinion on seed length. See [`.docs/deterministic-rsa4096-from-seed.md`](.docs/deterministic-rsa4096-from-seed.md) for the full design history and empirical research.
+Validated against real, independent code: the actual `arweave-core` package's `importKeyfile()`/`addressOf()`, and Node's native WebCrypto RSA-PSS sign+verify — not just internal self-checks. Generation is a one-time-per-seed operation (not a per-transaction cost) and exposes a purely-observational progress-reporting API (plus, on the TypeScript side, an event-loop-yielding async variant) so a UI can render a live, mathematically-grounded progress bar during the multi-second search — the completion estimate is a real geometric-distribution CDF (`1-(1-p)^attempts`), not a fake animation. The seed itself isn't hardcoded to DALOS Genesis's 1600 bits — APOLLO's 1024-bit safe-scalar bitstring works too. **The accepted lengths are a closed allow-list, not an open floor:** exactly `1024` or exactly `1600`, nothing else however long (settled 2026-09-11 — an earlier, wider "any length ≥ 128 bits" contract was tightened deliberately). RSA-4096's security comes from the 2048-bit prime search space, not seed length, so a longer or custom-length seed buys nothing; gating to exactly these two lengths ties every RSA seed to one of DALOS_Crypto's two production EC curves' own already-validated input pipelines. See [`.docs/deterministic-rsa4096-from-seed.md`](.docs/deterministic-rsa4096-from-seed.md) for the full design history and empirical research.
 
 ---
 

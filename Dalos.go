@@ -9,18 +9,6 @@ import (
     "os"
 )
 
-// Function to check if a character exists in the CharacterMatrix
-func isCharInMatrix(char rune, matrix [16][16]rune) bool {
-    for i := 0; i < 16; i++ {
-        for j := 0; j < 16; j++ {
-            if matrix[i][j] == char {
-                return true
-            }
-        }
-    }
-    return false
-}
-
 // Function to confirm seed words
 // confirmSeedWords prompts the user to retype the seed words for confirmation.
 // Returns nil on successful match; returns a wrapped error on read failure,
@@ -69,8 +57,7 @@ func confirmSeedWords(seedWords []string) error {
 func main() {
     // Variables
     DalosEllipse := el.DalosEllipse()
-    CharacterMatrix := el.CharacterMatrix()
-    
+
     // Main command flags
     generateFlag := flag.Bool("g", false, "Generate a DALOS Key-Pair")
     specialGenerateFlag := flag.Bool("gd", false, "Special variant of generating a DALOS Key-Pair in Demo Mode (must be used alone)")
@@ -212,34 +199,28 @@ func main() {
         } else if *seedFlag > 0 {
             seedCount := *seedFlag
             seedWords := flag.Args()
-            // Validate seed count
-            if seedCount < 4 || seedCount > 256 {
-                fmt.Println("Error: Seed number must be between 4 and 256.")
-                os.Exit(1)
-            }
-            // Validate seed words length and character restrictions
+            // Validate seed word COUNT against the -seed N flag itself
+            // (a CLI-only convenience check: the caller must state up
+            // front how many words follow, and that count must match
+            // what was actually typed).
             if len(seedWords) != seedCount {
                 fmt.Printf("Error: Expected %d words, but got %d.\n", seedCount, len(seedWords))
                 os.Exit(1)
             }
-            // Ensure seed words meet length requirements and character restrictions.
-            // F-API-002 (audit cycle 2026-05-04, v4.0.1): the prior error message
-            // claimed "between 3 and 256" while the check was `< 1 || > 256` — the
-            // function lied about its own contract. The correct contract (also
-            // documented in README.md:71) is: 4-256 words, each 1-256 characters.
-            for _, word := range seedWords {
-                if len(word) < 1 || len(word) > 256 {
-                    fmt.Printf("Error: Seed word '%s' must be between 1 and 256 characters long.\n", word)
-                    os.Exit(1) // Move exit here to stop execution
-                }
-                
-                // Check that all characters in the word exist in the CharacterMatrix
-                for _, char := range word {
-                    if !isCharInMatrix(char, CharacterMatrix) {
-                        fmt.Printf("Error: Seed word '%s' contains invalid character '%c'.\n", word, char)
-                        os.Exit(1) // Ensure it exits if invalid character is found
-                    }
-                }
+            // Final restriction level (settled 2026-09-11): the ONE
+            // seed-word contract, enforced identically everywhere in the
+            // codebase (this CLI, the Go library, the TS port) via
+            // Elliptic.ValidateSeedWords — 1-256 words, each 1-256
+            // glyphs, every glyph one of the 256 in the DALOS
+            // CharacterMatrix. This CLI used to run its own separate,
+            // inconsistent checks (a stricter 4-256 word-count floor,
+            // and a byte-length check that silently miscounted
+            // multi-byte UTF-8 glyphs) — replaced here so there is
+            // exactly one place this contract is defined.
+            // See Elliptic/SeedWordsValidation.go.
+            if err := el.ValidateSeedWords(seedWords); err != nil {
+                fmt.Println("Error:", err)
+                os.Exit(1)
             }
             fmt.Println("Seed Words are valid. Proceeding with Key-Pair generation from Seed Words.")
             // Seed words confirmation if -safe flag is used.
@@ -252,7 +233,11 @@ func main() {
                 }
             }
             // Call the key generation logic using the valid seed words
-            BitString := DalosEllipse.SeedWordsToBitString(seedWords)
+            BitString, err := DalosEllipse.SeedWordsToBitString(seedWords)
+            if err != nil {
+                fmt.Println("Error:", err)
+                os.Exit(1)
+            }
             ProcessKeyGeneration(&DalosEllipse, BitString, smartFlag, *passwordFlag)
         // Handle other generation methods (e.g., -bits, -i10, -i49) here...
         // Proceed with the key generation logic -bits Flag

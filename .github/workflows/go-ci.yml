@@ -110,9 +110,23 @@ jobs:
           # ADDING A NEW PRIMITIVE? Add a new line here AFTER you've
           # frozen the new corpus file. See docs/ADDING_NEW_PRIMITIVES.md.
           declare -A BASELINES=(
-            ["testvectors/v1_genesis.json"]="082f7a40405d4c075f1975af0a6075bb0228bbccae60a53b05b350a09ce223ae"
+            # 2026-09-11: re-pinned. Seed-word contract hotfix (final
+            # restriction level: 1-256 words, 1-256 glyphs/word, every
+            # glyph in the 256-glyph DALOS CharacterMatrix) changed the
+            # sw-0005 (Cyrillic) and sw-0006 (Greek) fixtures in
+            # testvectors/generator/main.go — their prior words
+            # ("привет"/"мир", "Γειά"/"σου"/"κόσμε") contained glyphs
+            # outside the matrix and would now fail ValidateSeedWords.
+            # Replaced with in-charset equivalents; every other one of
+            # the 105 genesis vectors is byte-identical (verified via
+            # diff before re-pinning).
+            ["testvectors/v1_genesis.json"]="be12073a5b634457bed71b7b54fb6429186ff288f47ce483afbeff9f422ff84c"
             ["testvectors/v1_historical.json"]="80c93f4d4956e01236808f81f518d17eeaad431f4fedb7c26233d2508f06e68b"
-            ["testvectors/v1_adversarial.json"]="b9f228943106e1293c52a7e3d741520e58940b78816a2eeed7aa7332314b9d93"
+            # 2026-09-11: corrected. This baseline was already stale at
+            # HEAD (didn't match the committed file's own elided hash)
+            # before the seed-word fix above — unrelated pre-existing
+            # drift, fixed opportunistically while re-pinning genesis.
+            ["testvectors/v1_adversarial.json"]="582025b173de7fb900d65d5b5ad3933ef9abdbc460681c2305b2fadd1aef0bf9"
             ["testvectors/v2_rsa4096.json"]="0d074fca0f14a5ae6cbcdae571b8d2a7df78dfef12216ac9f77e5f043d751bac"
           )
 

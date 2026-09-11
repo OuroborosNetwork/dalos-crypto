@@ -29,7 +29,7 @@ func fixedTestSeed() string {
 
 // fixedTestSeedOfLength builds the same repeating-pattern fixture at an
 // arbitrary length, used to test that this package works unchanged for
-// APOLLO-shaped (1024-bit) seeds too (§ minSeedBitStringLen in stream.go).
+// APOLLO-shaped (1024-bit) seeds too (§ allowedSeedBitStringLengths in stream.go).
 func fixedTestSeedOfLength(length int) string {
 	var sb strings.Builder
 	pattern := "1101001011010110"
@@ -99,8 +99,15 @@ func TestNewSeedStream_DifferentSeedsDiverge(t *testing.T) {
 
 func TestNewSeedStream_RejectsInvalidSeed(t *testing.T) {
 	cases := map[string]string{
-		"too short (below the sanity floor)": strings.Repeat("0", minSeedBitStringLen-1),
-		"non-binary char":                    strings.Repeat("2", dalosTestSeedLen),
+		"too short":                              strings.Repeat("0", 127),
+		"one bit short of 1024":                  strings.Repeat("0", apolloTestSeedLen-1),
+		"one bit over 1024":                      strings.Repeat("0", apolloTestSeedLen+1),
+		"one bit short of 1600":                  strings.Repeat("0", dalosTestSeedLen-1),
+		"one bit over 1600":                      strings.Repeat("0", dalosTestSeedLen+1),
+		"unrelated curve length (LETO, 545)":     strings.Repeat("0", 545),
+		"unrelated curve length (ARTEMIS, 1023)": strings.Repeat("0", 1023),
+		"arbitrary long custom string (65536)":   strings.Repeat("01", 32768),
+		"non-binary char":                        strings.Repeat("2", dalosTestSeedLen),
 	}
 	for name, bad := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -111,12 +118,16 @@ func TestNewSeedStream_RejectsInvalidSeed(t *testing.T) {
 	}
 }
 
-// TestNewSeedStream_AcceptsMultipleCurveShapes confirms the seed stream is
-// NOT hardcoded to DALOS Genesis's 1600 bits -- it works identically for
-// APOLLO's 1024-bit safe scalar (and, by the same reasoning, any other
-// curve's safe-scalar size), since Blake3-XOF has no structural opinion on
-// input length. See stream.go's minSeedBitStringLen doc comment.
-func TestNewSeedStream_AcceptsMultipleCurveShapes(t *testing.T) {
+// TestNewSeedStream_AcceptsExactlyTheTwoBlessedLengths confirms the seed
+// stream accepts EXACTLY 1024 (APOLLO) and 1600 (DALOS Genesis) bits, and
+// nothing else -- settled 2026-09-11, superseding an earlier, wider "any
+// length >= 128" contract. See stream.go's allowedSeedBitStringLengths
+// doc comment for why: RSA-4096's security comes from the 2048-bit prime
+// search space, not seed length, so there is no benefit to accepting
+// longer or otherwise-shaped seeds, and a real cost (an unaudited,
+// unbounded input path not tied to either curve's own validated
+// pipeline).
+func TestNewSeedStream_AcceptsExactlyTheTwoBlessedLengths(t *testing.T) {
 	for _, length := range []int{apolloTestSeedLen, dalosTestSeedLen} {
 		t.Run(fmt.Sprintf("len_%d", length), func(t *testing.T) {
 			seed := fixedTestSeedOfLength(length)
