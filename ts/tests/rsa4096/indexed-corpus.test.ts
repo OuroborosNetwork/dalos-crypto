@@ -18,7 +18,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
-  generateBatchFromBitString,
+  generateBatchFromBitStringAsync,
   generateFromBitStringAtIndex,
   selfCheckTextbookRSA,
 } from '../../src/rsa4096/index.js';
@@ -101,9 +101,14 @@ describe('RSA4096 indexed corpus byte-identity', () => {
 });
 
 describe('generateBatchFromBitString reproduces the frozen idx-01/02/03 vectors', () => {
-  // 3 full RSA-4096 generations in one test genuinely exceeds vitest's
-  // 15s default -- explicit timeout, not a hang.
-  it('batch(seed, 0, 3) matches rsa4096-idx-01/02/03 exactly', () => {
+  // Uses the Async variant (yields every 8 candidate draws) rather than
+  // chaining 3 full sync generations with zero internal yield points --
+  // see batch.test.ts's header comment for why: a long enough
+  // uninterrupted synchronous block can miss vitest's own internal
+  // worker-RPC heartbeat (a 60s birpc default, not configurable via
+  // vitest.config.ts), which is a false-positive infrastructure failure
+  // distinct from any real assertion failing.
+  it('batch(seed, 0, 3) matches rsa4096-idx-01/02/03 exactly', async () => {
     const corpus = loadCorpus();
     const v01 = corpus.rsa4096_indexed_vectors.find((v) => v.id === 'rsa4096-idx-01')!;
     const v02 = corpus.rsa4096_indexed_vectors.find((v) => v.id === 'rsa4096-idx-02')!;
@@ -111,7 +116,7 @@ describe('generateBatchFromBitString reproduces the frozen idx-01/02/03 vectors'
     expect(v01.input_bitstring).toBe(v02.input_bitstring);
     expect(v01.input_bitstring).toBe(v03.input_bitstring);
 
-    const batch = generateBatchFromBitString(v01.input_bitstring, 0, 3);
+    const batch = await generateBatchFromBitStringAsync(v01.input_bitstring, 0, 3);
 
     expect(batch[0]!.address).toBe(v01.address);
     expect(batch[1]!.address).toBe(v02.address);
@@ -119,5 +124,5 @@ describe('generateBatchFromBitString reproduces the frozen idx-01/02/03 vectors'
     expect(batch[0]!.key.n.toString(16)).toBe(v01.modulus_n_hex);
     expect(batch[1]!.key.n.toString(16)).toBe(v02.modulus_n_hex);
     expect(batch[2]!.key.n.toString(16)).toBe(v03.modulus_n_hex);
-  }, 45_000);
+  });
 });
