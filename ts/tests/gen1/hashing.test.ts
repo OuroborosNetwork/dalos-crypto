@@ -19,16 +19,16 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  InvalidSeedWordsError,
+  MAX_SEED_WORDS,
+  MAX_SEED_WORD_GLYPHS,
+  MIN_SEED_WORDS,
+  MIN_SEED_WORD_GLYPHS,
   affineToPublicKey,
   convertHashToBitString,
   convertToLetters,
   dalosAddressComputer,
   dalosAddressMaker,
-  InvalidSeedWordsError,
-  MAX_SEED_WORD_GLYPHS,
-  MAX_SEED_WORDS,
-  MIN_SEED_WORD_GLYPHS,
-  MIN_SEED_WORDS,
   parseBigIntInBase,
   publicKeyToAddress,
   publicKeyToAffineCoords,

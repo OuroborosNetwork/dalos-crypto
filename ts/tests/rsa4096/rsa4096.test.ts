@@ -203,7 +203,7 @@ describe('RSA4096 seed length is gated to exactly the two blessed curve lengths'
     expect(() => validateSeedBitString('0'.repeat(1300))).toThrow();
   });
 
-  it('rejects other DALOS_Crypto curves\' safe-scalar lengths (LETO 545, ARTEMIS 1023)', () => {
+  it("rejects other DALOS_Crypto curves' safe-scalar lengths (LETO 545, ARTEMIS 1023)", () => {
     expect(() => validateSeedBitString('0'.repeat(545))).toThrow();
     expect(() => validateSeedBitString('0'.repeat(1023))).toThrow();
   });
