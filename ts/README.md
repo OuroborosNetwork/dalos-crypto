@@ -78,6 +78,8 @@ reference's [105-vector test corpus](https://github.com/StoaChain/DALOS_Crypto/b
 ```ts
 import { validateSeedWords, InvalidSeedWordsError } from "@ouronet/dalos-crypto/gen1";
 
+const userTypedWords = ["mountain", "whisper", "aurora", "eternal"];
+
 try {
   validateSeedWords(userTypedWords); // same gate generateFromSeedWords runs internally
 } catch (e) {
