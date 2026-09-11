@@ -16,6 +16,67 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [4.1.0] — 2026-09-11
+
+**New primitive: deterministic RSA-4096 key generation for Arweave, from the same DALOS seed.**
+
+The same seed bitstring that mints a DALOS Genesis EC account (via any of the
+six input paths — random, bitstring, integer, or a custom seed-word phrase in
+any of 20+ languages) can now *also* deterministically mint a real,
+standards-compliant RSA-4096 keypair — the exact key format
+[Arweave](https://arweave.org) requires, which cannot be derived from an EC
+key by conversion (a completely different algebraic structure). Same seed in,
+same keypair out, byte-for-byte, forever, on any machine, in either language.
+
+Built from scratch, not wrapped, because mainstream RSA generators actively
+resist being made reproducible: Go's `crypto/rsa.GenerateKey` silently
+discards a caller-supplied random source by default since Go 1.26, and even
+its escape hatch carries a coin-flip anti-determinism guard that's been
+there since 2018, specifically to stop callers from relying on
+seed-reproducible generation. So this ships a from-scratch FIPS 186-5 prime
+search (Blake3-XOF seed expansion, hand-rolled Miller-Rabin with
+rejection-sampled witnesses, 100 rounds) in both Go (`RSA4096/`) and
+TypeScript (`ts/src/rsa4096/`, new `@ouronet/dalos-crypto/rsa4096` subpath).
+
+**Validated against real, independent code**, not just internal
+self-checks: the actual `arweave-core` package's `importKeyfile()`/
+`addressOf()` accept every generated key and reproduce the address
+byte-for-byte, and Node's native WebCrypto completes a real RSA-PSS/SHA-256
+sign→verify round-trip. The Go reference and TS port are cross-validated
+field-by-field — including the exact internal candidate-search counts, not
+just final output — against a frozen 3-vector corpus
+(`testvectors/v2_rsa4096.json`).
+
+**A real, purely-observational progress-reporting API** on both languages
+(`GenerateFromBitString`/`generateFromBitString` take an optional callback),
+plus a TypeScript-only `generateFromBitStringAsync` that yields to the event
+loop every 8 candidate draws (same mechanism as `scalarMultiplierAsync`) so
+a UI progress bar actually repaints during the multi-second search instead
+of freezing until the whole call returns. The completion estimate is a real
+geometric-distribution CDF, not a fake animation.
+
+**Seed length generalized** beyond DALOS Genesis's 1600 bits — any
+DALOS_Crypto curve's safe-scalar bitstring works unchanged (confirmed with
+APOLLO's 1024 bits), since the construction has no structural opinion on
+seed length beyond a 128-bit sanity floor.
+
+**Zero real entropy anywhere in the new code**, verified by grepping the
+entire dependency chain (this package's own code, the Blake3 package it
+calls into, and — TS side — `@noble/hashes`'s `blake3`/`sha2`) for every
+entropy-consuming API. None found.
+
+Existing Genesis/historical byte-identity untouched — `v1_genesis.json` and
+`v1_historical.json` both reproduce their documented frozen SHA-256 exactly,
+verified before and after every change in this release.
+
+**436 tests pass** (up from 426) across Node 20/22/24, plus 15 Go tests for
+the new package. Full design history, empirical research (the Go
+`crypto/rsa` entropy-blocking findings, the `φ(n)`/`λ(n)` convention
+research, the witness-bias bug caught in review, the 64→100 round-count
+change) in `.docs/deterministic-rsa4096-from-seed.md`.
+
+---
+
 ## [4.0.4] — 2026-07-22
 
 **Patch release — package rename, no functional change.**
