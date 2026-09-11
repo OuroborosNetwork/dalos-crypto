@@ -2,11 +2,13 @@
 
 > TypeScript port of the DALOS Genesis cryptographic primitive — Ouronet's
 > custom 1606-bit Twisted Edwards curve with six key-generation input
-> paths, Schnorr v2 signatures, AES-256-GCM encryption, and a pluggable
-> `CryptographicRegistry` for multi-generation forward compatibility.
+> paths, Schnorr v2 signatures, AES-256-GCM encryption, a pluggable
+> `CryptographicRegistry` for multi-generation forward compatibility, and
+> deterministic RSA-4096 key generation for Arweave accounts from the
+> same custom seed phrase.
 
 [![npm](https://img.shields.io/npm/v/@ouronet/dalos-crypto.svg)](https://www.npmjs.com/package/@ouronet/dalos-crypto)
-[![tests](https://img.shields.io/badge/tests-426%20passing-brightgreen.svg)](#verification)
+[![tests](https://img.shields.io/badge/tests-431%20passing-brightgreen.svg)](#verification)
 [![license](https://img.shields.io/badge/license-UNLICENSED-blue.svg)](https://github.com/StoaChain/DALOS_Crypto)
 
 ---
@@ -94,6 +96,69 @@ never exposes them.
 
 See [`docs/HISTORICAL_CURVES.md`](https://github.com/StoaChain/DALOS_Crypto/blob/main/docs/HISTORICAL_CURVES.md)
 for the full provenance, audit log, and usage.
+
+### Deterministic RSA-4096 for Arweave (new)
+
+The same custom seed phrase that mints your DALOS Genesis EC account can
+*also* deterministically mint a real, standards-compliant **RSA-4096
+keypair** — the exact key format Arweave requires. Same seed in, same
+keypair out, byte-for-byte, forever, on any machine — including the
+Arweave address.
+
+**Why this doesn't normally exist:** RSA key generation is fundamentally
+a probabilistic search for two large primes, not one algebraic step like
+EC key derivation — and every mainstream RSA implementation deliberately
+resists being made reproducible. We traced this ourselves rather than
+assume it: Go's standard library silently ignores a caller-supplied
+random source by default since Go 1.26, and even its escape hatch has a
+coin-flip anti-determinism safeguard that's been there since 2018,
+specifically to stop callers from relying on `rsa.GenerateKey` being
+seed-reproducible. So this package doesn't wrap a standard RSA generator
+— it implements the prime search itself from scratch (FIPS 186-5,
+Miller-Rabin, unbiased rejection-sampled witnesses), sourcing every
+single random-looking byte from one seeded Blake3-XOF stream. No
+`crypto.getRandomValues`, no `Math.random`, no OS entropy anywhere in
+the path — verified by grepping the entire dependency chain, not just
+asserted.
+
+Validated against **real, independent Arweave code**, not just internal
+self-checks: the actual `arweave-core` package's `importKeyfile()` and
+`addressOf()` accept the generated keys and reproduce the address
+byte-for-byte, and Node's native WebCrypto completes a real RSA-PSS/
+SHA-256 sign→verify round-trip with them. The Go reference and this TS
+port are cross-validated field-by-field — including the exact internal
+candidate-search counts, not just the final output — against a frozen
+test-vector corpus.
+
+As far as our research could establish, no other audited, production-
+grade library exposes this. The one community project we found
+attempting seed-derived Arweave keys uses non-standard derivation and
+has open, reported determinism bugs — which lines up exactly with the
+entropy-leak failure mode this package was built specifically to avoid.
+
+```ts
+import { generateFromBitString } from "@ouronet/dalos-crypto/rsa4096";
+
+// Same 1600-bit seed you'd feed to DalosGenesis.generateFromBitString —
+// deterministically produces a full RSA-4096 keypair + Arweave address
+// instead of (or alongside) an EC account.
+const bits1600 = "1".repeat(800) + "0".repeat(800);
+const result = generateFromBitString(bits1600);
+
+console.log(result.address);  // 43-char base64url Arweave address
+console.log(result.jwk);      // canonical 9-field Arweave JWK (kty, n, e, d, p, q, dp, dq, qi)
+
+// Same seed, run again (even on a different machine) -> identical output.
+```
+
+Generation costs low-single-digit seconds (finding two real 2048-bit
+primes isn't cheap) — treat it as an async, off-the-main-thread
+operation with a progress indicator, the same guidance `arweave-core`
+gives for its own (non-deterministic) key generation.
+
+See [`.docs/deterministic-rsa4096-from-seed.md`](https://github.com/OuroborosNetwork/dalos-crypto/blob/main/.docs/deterministic-rsa4096-from-seed.md)
+for the full design history, empirical research, and everything checked
+along the way.
 
 ---
 
@@ -227,9 +292,10 @@ import { fromRandom } from "@ouronet/dalos-crypto/gen1";
 import { createDefaultRegistry, DalosGenesis } from "@ouronet/dalos-crypto/registry";
 import { LETO } from "@ouronet/dalos-crypto/historical";
 import { blake3SumCustom } from "@ouronet/dalos-crypto/dalos-blake3";
+import { generateFromBitString } from "@ouronet/dalos-crypto/rsa4096";
 
-// All four subpaths exist; pick whichever surface area you need.
-console.log(typeof fromRandom, typeof DalosGenesis, typeof createDefaultRegistry, typeof LETO, typeof blake3SumCustom);
+// All five subpaths exist; pick whichever surface area you need.
+console.log(typeof fromRandom, typeof DalosGenesis, typeof createDefaultRegistry, typeof LETO, typeof blake3SumCustom, typeof generateFromBitString);
 ```
 
 Every subpath has first-class TypeScript types.
@@ -247,13 +313,19 @@ against 105 canonical test vectors:
 - 20 bitmap fixtures (hand-designed + deterministic-random)
 - 20 Schnorr sign + self-verify
 
-Plus `[Q]·G = O` end-to-end verification per curve. Run locally:
+Plus `[Q]·G = O` end-to-end verification per curve. The RSA-4096 package
+carries the same guarantee against its own frozen corpus
+(`testvectors/v2_rsa4096.json`) — every field of every vector, including
+the exact internal candidate-search counts (proof the two
+implementations consume the seed identically, not just coincidentally
+agree on the final key). Run locally:
 
 ```bash
-npm test   # 426 tests, ~30s
+npm test   # 431 tests, ~30s
 ```
 
-See the Go-reference corpus: [`testvectors/v1_genesis.json`](https://github.com/StoaChain/DALOS_Crypto/blob/main/testvectors/v1_genesis.json).
+See the Go-reference corpora: [`testvectors/v1_genesis.json`](https://github.com/StoaChain/DALOS_Crypto/blob/main/testvectors/v1_genesis.json)
+and [`testvectors/v2_rsa4096.json`](https://github.com/StoaChain/DALOS_Crypto/blob/main/testvectors/v2_rsa4096.json).
 
 ---
 
@@ -274,6 +346,12 @@ See the Go-reference corpus: [`testvectors/v1_genesis.json`](https://github.com/
   nibble is zero, eliminating a latent round-trip failure present in
   the Go reference (~6% of randomly-generated IVs). Ciphertexts
   produced by the TS port decrypt cleanly on both TS and Go sides.
+- **RSA-4096 touches zero real entropy, verified not just asserted.**
+  The entire dependency chain — `src/rsa4096/*`, the Blake3-XOF stream
+  it's built on, and `@noble/hashes`'s underlying `blake3`/`sha2`
+  implementations — was grepped for `Math.random`, `crypto.getRandomValues`,
+  and every other entropy source; there are none. Every byte the prime
+  search consumes traces back deterministically to the input seed.
 
 ---
 
