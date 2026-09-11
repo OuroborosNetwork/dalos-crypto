@@ -6,6 +6,43 @@ This file captures the verbatim output of the Go validation suite against the DA
 
 ---
 
+## Run — 2026-09-11 (RSA4096 primitive added — new corpus, existing corpora unperturbed)
+
+### Environment
+
+| Item | Value |
+|------|-------|
+| Host OS | Linux (Ubuntu 26.04), bash |
+| Go version | go1.27.1 linux/amd64 (installed this session; verified tarball SHA-256 against `go.dev/dl/?mode=json` before install) |
+| Generator version | 3.0.1 (unchanged) + RSA4096 generator addition, v1.0.0 |
+| Node version | v22.22.1 |
+
+### What changed
+
+New primitive `RSA4096/` (Go) + `ts/src/rsa4096/` (TypeScript): deterministic RSA-4096 key generation from a DALOS 1600-bit seed bitstring, for Arweave account derivation. Graduated from a research prototype (`research/rsa4096-poc/`, now reduced to a thin external-validation harness) after empirical research recorded in `.docs/deterministic-rsa4096-from-seed.md`. New corpus file `testvectors/v2_rsa4096.json` (3 vectors — kept small deliberately since each full RSA-4096 generation costs low-single-digit seconds; see the generator's own comment for the reasoning), own dedicated RNG seed `RNG_SEED_RSA4096 = 0xC0DE4096`.
+
+### Checks
+
+| Check | Result |
+|-------|--------|
+| `go build ./...` | ✅ PASS (exit 0), including new `RSA4096/` package |
+| `go vet ./...` | ✅ PASS (exit 0) |
+| `go test ./...` | ✅ PASS — all existing suites unchanged; new `RSA4096` package suite: 11/11 tests pass (3.5s), including a cross-check against `math/big.Int.ProbablyPrime` as an independent oracle |
+| `v1_genesis.json` byte-identity (extended-elided) | ✅ UNCHANGED: `082f7a40405d4c075f1975af0a6075bb0228bbccae60a53b05b350a09ce223ae` |
+| `v1_historical.json` byte-identity (extended-elided) | ✅ UNCHANGED: `80c93f4d4956e01236808f81f518d17eeaad431f4fedb7c26233d2508f06e68b` |
+| `v1_adversarial.json` byte-identity (extended-elided) | ⚠️ UNCHANGED relative to its own pre-existing state (`582025b173de7fb900d65d5b5ad3933ef9abdbc460681c2305b2fadd1aef0bf9`) but that pre-existing state does **not** match the CI-pinned baseline (`b9f228943106e1293c52a7e3d741520e58940b78816a2eeed7aa7332314b9d93`) — a drift that predates this session and is unrelated to the RSA4096 work (this session never touched adversarial-vector generation code). Flagged for separate investigation; not fixed here per the "never modify BASELINES to silence a gate" rule in `docs/ADDING_NEW_PRIMITIVES.md`. |
+| `v2_rsa4096.json` byte-identity (extended-elided) | ✅ Stable across 3 independent regenerations: `b0573a4dc48b55f2394e68fe2a17108e7a3a4bd1dbb781d8c3230984a5470499` — now pinned in `.github/workflows/go-ci.yml` |
+| TS test suite (`npm test` from `ts/`) | ✅ 431/431 tests pass (20 files), including new `tests/rsa4096/rsa4096.test.ts` — asserts the TS port reproduces every field of every `v2_rsa4096.json` vector exactly: `p`, `q`, `n`, `d`, `dp`, `dq`, `qi`, the full JWK, the address, **and** the exact candidate-attempt counts (proof of byte-identical stream consumption, not just coincidentally-equal final output) |
+| External validation (real `arweave-core` + Node WebCrypto, not internal self-checks) | ✅ All 3 `v2_rsa4096.json` vectors: real `arweave-core`'s compiled `importKeyfile()`/`addressOf()` accept the generated JWKs and reproduce the address byte-for-byte; Node's native WebCrypto imports each as a real RSA-PSS/SHA-256 keypair and completes a real sign→verify round-trip. Run via `research/rsa4096-poc/validate.mjs` + `validate_golden.mjs`. |
+
+### What this run proves
+
+1. Adding an entirely new, non-elliptic-curve primitive did not perturb any existing frozen vector — the byte-identity gate for `v1_genesis.json` and `v1_historical.json` holds exactly.
+2. The new primitive's Go and TypeScript implementations agree byte-for-byte, including internal search-path details (attempt counts), not just final output — the strongest form of the cross-language contract this repo already holds for Gen-1.
+3. The generated keys are accepted by real, independent Arweave-ecosystem code (not reimplemented by this repo), which is the strongest evidence achievable short of an actual on-chain transaction (deliberately not attempted in this session — needs a funded wallet and a human present).
+
+---
+
 ## Run — 2026-04-30 (v3.0.1, error-handling closure)
 
 ### Environment

@@ -91,8 +91,9 @@ Or paste `verification/verify_dalos_curve.sage` into https://sagecell.sagemath.o
 | `Bitmap/Bitmap.go` | 40×40 B/W bitmap input path (added in v1.2.0). 1600 pixels = 1600 bits, then reshapes into the Genesis bitstring. |
 | `Blake3/`, `AES/` | Inlined primitives — Blake3 XOF and AES-256-GCM with Blake3 KDF. No external Go module dependencies. |
 | `Auxilliary/Auxilliary.go` | Rune trimming + small helpers. |
+| `RSA4096/` | Deterministic RSA-4096 key generation from a DALOS 1600-bit seed bitstring, for Arweave account derivation (`GenerateFromBitString` → JWK + address). A completely different algebraic structure from Gen-1 (no elliptic curve, no `CryptographicPrimitive` registry fit — see `docs/ADDING_NEW_PRIMITIVES.md` Step 8) built from scratch on top of `Blake3` (seed-expansion DRBG) + `math/big` (arithmetic only, never randomness — `crypto/rsa.GenerateKey` is permanently unusable for this, see `.docs/deterministic-rsa4096-from-seed.md` §8). Validated against real `arweave-core` + Node WebCrypto, not just internal self-checks. |
 | `Dalos.go` | CLI driver (`-g` generate, `-c` convert, `-open` decrypt wallet, `-sign`, `-verify`, `-gd` demo). |
-| `testvectors/generator/main.go` | Reproducible vector generator. Deterministic seeds are `RNG_SEED_BITS = 0xD4105C09702` and `RNG_SEED_BITMAPS = 0xB17A77` — **do not change** without invalidating the corpus. |
+| `testvectors/generator/main.go` | Reproducible vector generator. Deterministic seeds are `RNG_SEED_BITS = 0xD4105C09702` and `RNG_SEED_BITMAPS = 0xB17A77` — **do not change** without invalidating the corpus. RSA4096 has its own dedicated seed, `RNG_SEED_RSA4096 = 0xC0DE4096`, writing to the separate `testvectors/v2_rsa4096.json` file (never the v1_* files). |
 
 ### TypeScript port layout (`ts/src/`)
 
@@ -105,8 +106,9 @@ The TS port mirrors the Go reference's logical decomposition but reorganises it 
 | `/dalos-blake3` | `src/dalos-blake3/` | Thin wrapper over `@noble/hashes` Blake3 — matches the Go inlined Blake3 byte-for-byte. |
 | `/registry` | `src/registry/` | `CryptographicPrimitive` interface + `DalosGenesis` adapter + `CryptographicRegistry` class. The forward-compatibility seam for future Gen-2 primitives (e.g., post-quantum) without breaking existing `Ѻ.`/`Σ.` accounts. |
 | `/historical` | `src/historical/` | LETO / ARTEMIS / APOLLO curve params + their primitive registry adapters. **Production-ready as of v1.2.0** — full `CryptographicPrimitive` wrappers with their own address prefixes + Schnorr v2. |
+| `/rsa4096` | `src/rsa4096/` | Deterministic RSA-4096 key generation, hand-ported to native `BigInt` (JS has no built-in modexp/gcd/modular-inverse — see `src/rsa4096/bigint-math.ts`). Mirrors `RSA4096/*.go` file-for-file. NOT registered in `/registry`'s `CryptographicPrimitive` interface (that shape is EC-specific: dual addresses, an optional scalar — RSA-4096 has neither). |
 
-Tests under `ts/tests/` mirror this structure. `ts/tests/fixtures.ts` loads the Go-produced corpus and is the source of truth for cross-implementation byte-identity assertions.
+Tests under `ts/tests/` mirror this structure. `ts/tests/fixtures.ts` loads the Go-produced corpus and is the source of truth for cross-implementation byte-identity assertions. `ts/tests/rsa4096/rsa4096.test.ts` does the same against `testvectors/v2_rsa4096.json`, asserting every field (p, q, n, d, dp, dq, qi, the full JWK, the address, AND the exact candidate-attempt counts — the strongest possible signal that stream consumption, not just final output, is byte-identical).
 
 ### Invariants to preserve
 
@@ -114,6 +116,7 @@ Tests under `ts/tests/` mirror this structure. `ts/tests/fixtures.ts` loads the 
 2. **Schnorr wire format moved from v1 → v2 in `v2.0.0`.** Pre-v2 Schnorr signatures will not verify under the v2 verifier. The 20 Schnorr vectors in the corpus are already in v2 format; their `r` component is randomised per-run (Go side uses `crypto/rand` for the nonce in some paths) so byte-equality is not asserted on Schnorr — instead, self-verify-true and Go↔TS cross-verify are the assertions.
 3. **Go and TS must agree.** Any change to one side's output requires the matching change on the other side, and the corpus must be regenerated and committed atomically. The TS test suite cross-checks against the corpus on every run — drift is caught immediately.
 4. **One TS-only deviation, by design.** The TS port constrains the AES IV's high nibble to be non-zero, sidestepping a latent Go-era `big.Int → hex → bytes` round-trip edge case (≈6% failure rate on Go for random IVs). This is implementation-level, not a wire-format change. Documented in README.md "Hardening catalogue".
+5. **RSA4096 is a separate primitive, not a Gen-1 extension.** `v2_rsa4096.json` is its own frozen corpus (never a v1_* file); it uses `λ(n)` (Carmichael), not `φ(n)` (Euler), for the private exponent — empirically confirmed to match OpenSSL/WebCrypto in `.docs/deterministic-rsa4096-from-seed.md` §9.2. `MillerRabinRounds` (64) and `SmallPrimeCount` (2000) are exported constants that MUST stay numerically identical between `RSA4096/millerrabin.go` + `RSA4096/primes.go` and `ts/src/rsa4096/millerrabin.ts` + `ts/src/rsa4096/primes.ts` — a mismatch would silently change how many stream bytes get consumed per candidate and break cross-language byte-identity without an obvious error.
 
 ### Releases
 
@@ -123,6 +126,7 @@ Tests under `ts/tests/` mirror this structure. `ts/tests/fixtures.ts` loads the 
 - **v1.3.0** — Cat-A batch 1 (constant-time scalar mult + Schnorr verify hardening). Output preserved.
 - **v2.0.0** — Cat-B Schnorr v2 wire format break.
 - **v2.1.0** — Cat-A batch 2 (PO-3, KG-2, KG-3, AES-3). Output preserved. Current head.
+- **RSA4096 (2026-09-11)** — new primitive, `testvectors/v2_rsa4096.json` frozen. Deterministic RSA-4096 key generation for Arweave account derivation, Go reference + TypeScript port, validated against real `arweave-core` + Node WebCrypto. Does not touch or supersede any Gen-1 version above — see `.docs/deterministic-rsa4096-from-seed.md` for the full history. (Note: this "Releases" list was already stale relative to the package's actual shipped version — see `go.mod` / `ts/package.json` for the canonical current version — before this entry was added; not resolved here, out of scope.)
 
 Per-release canonical corpus hashes and validation logs live in `testvectors/VALIDATION_LOG.md`.
 

@@ -35,3 +35,15 @@ export * as historical from './historical/index.js';
 // retire it.
 export * as dalosBlake3 from './dalos-blake3/index.js';
 export * as blake3 from './dalos-blake3/index.js';
+
+// Re-export the rsa4096 subpath at the top level for discoverability.
+// Canonical import path is still `@ouronet/dalos-crypto/rsa4096`. Deterministic
+// RSA-4096 key generation from a DALOS seed bitstring, for Arweave account
+// derivation. NOT registered in the `registry` CryptographicPrimitive
+// interface -- that interface is EC-shaped (dual standard/smart addresses,
+// an optional scalar); RSA-4096 has none of that (a single Arweave-style
+// address, no scalar, JWK-shaped key material), so forcing it into that
+// shape would be misleading rather than helpful. See
+// docs/ADDING_NEW_PRIMITIVES.md Step 8 and
+// /.docs/deterministic-rsa4096-from-seed.md for the reasoning.
+export * as rsa4096 from './rsa4096/index.js';

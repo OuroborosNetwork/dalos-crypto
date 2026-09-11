@@ -4,7 +4,7 @@
 // numbers and confirm it round-trips. This is independent of, and a
 // necessary-but-not-sufficient complement to, the external Node/WebCrypto +
 // real arweave-core cross-validation done by validate.mjs.
-package main
+package RSA4096
 
 import (
 	"errors"
@@ -23,11 +23,11 @@ type KeyGenResult struct {
 	QAttempts   int
 }
 
-// GenerateFullKey runs the complete seed -> RSA-4096 JWK pipeline (steps
+// GenerateFromBitString runs the complete seed -> RSA-4096 JWK pipeline (steps
 // 1 through 6, plus the local half of step 8): open the seed stream, find
 // two validated primes, assemble the key, encode the JWK, derive the
 // address.
-func GenerateFullKey(seedBitString string) (*KeyGenResult, error) {
+func GenerateFromBitString(seedBitString string) (*KeyGenResult, error) {
 	stream, err := NewSeedStream(seedBitString)
 	if err != nil {
 		return nil, err

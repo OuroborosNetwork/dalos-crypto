@@ -80,6 +80,10 @@ Two account types, each a 160-character string (plus symbol prefix):
 
 Addresses are derived via seven-fold Blake3 hashing followed by mapping through a 16×16 Unicode character matrix spanning Cyrillic, Greek, Latin-extended, accented Latin, currency, and mathematical symbols.
 
+### 4. Deterministic RSA-4096 for Arweave
+
+The same 1600-bit seed that produces a DALOS Genesis EC keypair can also deterministically produce a real, standards-compliant RSA-4096 keypair — the format Arweave wallets require, which cannot be derived from an EC key by conversion (a completely different algebraic structure). `crypto/rsa.GenerateKey` from Go's standard library is permanently unusable for this — its caller-supplied entropy is ignored by default since Go 1.26, and even the escape hatch has a deliberate anti-determinism safeguard baked in since 2018 — so this is a from-scratch FIPS 186-5 prime search (Blake3-XOF seed expansion + hand-rolled Miller-Rabin, sourced entirely from the seed) implemented in both Go (`RSA4096/`) and TypeScript (`ts/src/rsa4096/`). Validated against real, independent code: the actual `arweave-core` package's `importKeyfile()`/`addressOf()`, and Node's native WebCrypto RSA-PSS sign+verify — not just internal self-checks. See [`.docs/deterministic-rsa4096-from-seed.md`](.docs/deterministic-rsa4096-from-seed.md) for the full design history and empirical research.
+
 ---
 
 ## Quick Verification
@@ -134,6 +138,7 @@ DALOS_Crypto/
 │   ├── PointOperations.go          HWCD addition/doubling/tripling + scalar mult
 │   ├── KeyGeneration.go            Key-generation API + 16×16 character matrix + GenerateFromBitmap
 │   └── Schnorr.go                  Schnorr sign/verify
+├── RSA4096/                         Deterministic RSA-4096 for Arweave (new — see Key Features §4)
 ├── Dalos.go                        CLI driver (standalone key-gen tool)
 ├── go.mod                          Go module descriptor
 ├── verification/                   Reproducible mathematical verification
@@ -143,6 +148,7 @@ DALOS_Crypto/
 │   └── VERIFICATION_LOG.md         Verbatim output of the verification run
 ├── testvectors/
 │   ├── v1_genesis.json             105 reproducible input/output vectors
+│   ├── v2_rsa4096.json             3 RSA-4096 seed → JWK + address vectors (new)
 │   ├── generator/main.go           Deterministic Go generator
 │   └── VALIDATION_LOG.md           go vet + build + determinism proof
 ├── docs/

@@ -6,6 +6,10 @@
 # Stray Go build artifacts (transient — regenerated on each `go run`).
 # Most common: generator.exe from `go run testvectors/generator/main.go` on Windows.
 *.exe
+# Same thing on Linux/macOS has no extension: `go build ./...` drops a
+# binary per main package, named after its directory, at the repo root.
+/generator
+/DALOS_Crypto
 
 # DALOS wallet files — keystore/export.go writes filenames of shape
 # {first7_pubkey}...{last7_pubkey}.txt to the working directory.

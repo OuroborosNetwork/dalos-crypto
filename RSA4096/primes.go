@@ -3,17 +3,17 @@
 // expensive Miller-Rabin test (candidate.go / millerrabin.go). See the
 // Decision Record in /.docs/deterministic-rsa4096-from-seed.md §8 for the
 // cost-model derivation of why ~2000 small primes is the right cutoff.
-package main
+package RSA4096
 
 import "math/big"
 
-// smallPrimeCount is the number of small odd primes we trial-divide by.
+// SmallPrimeCount is the number of small odd primes we trial-divide by.
 // Chosen from an explicit cost-model computation (see chat log / decision
 // record): the optimum for 2048-bit candidates sits around ~1400 primes
 // (bound ~11700) with a very flat curve out to ~2000 primes (bound ~17900);
 // 2000 was picked as a clean round number solidly inside that flat optimum,
 // deliberately NOT hardcoded as a literal list (see reasoning below).
-const smallPrimeCount = 2000
+const SmallPrimeCount = 2000
 
 // smallOddPrimes returns the first n odd primes (2 is excluded on purpose:
 // every candidate from GenerateCandidate has its bottom bit forced to 1, so
@@ -78,13 +78,13 @@ func sieveOfEratosthenes(limit int) []uint64 {
 
 // smallOddPrimesCache is computed once (the sieve is cheap, but there is no
 // reason to redo it for every candidate across the whole search).
-var smallOddPrimesCache = smallOddPrimes(smallPrimeCount)
+var smallOddPrimesCache = smallOddPrimes(SmallPrimeCount)
 
 // smallOddPrimesBigIntCache pre-boxes each entry of smallOddPrimesCache into
 // a *big.Int once, instead of allocating a fresh one on every trial-division
 // check. PassesTrialDivision runs on nearly every candidate drawn (it's the
 // first-line filter), so across a full key generation this divisor list is
-// consulted on the order of a few thousand candidates x smallPrimeCount
+// consulted on the order of a few thousand candidates x SmallPrimeCount
 // primes -- reusing the same *big.Int values avoids millions of avoidable
 // short-lived allocations. (Caught in review before this ever ran at scale.)
 var smallOddPrimesBigIntCache = func() []*big.Int {
@@ -96,7 +96,7 @@ var smallOddPrimesBigIntCache = func() []*big.Int {
 }()
 
 // PassesTrialDivision reports whether candidate is NOT divisible by any of
-// the first smallPrimeCount odd primes. false means "definitely composite,
+// the first SmallPrimeCount odd primes. false means "definitely composite,
 // reject without spending a single Miller-Rabin round." true means "survived
 // the cheap filter, now worth the expensive real test."
 //

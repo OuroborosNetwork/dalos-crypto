@@ -2,7 +2,7 @@
 // 2048-bit prime (steps 2-4), then the pairwise safety checks FIPS 186-5
 // requires once both primes are found (step 5). See
 // /.docs/deterministic-rsa4096-from-seed.md §5.2-§5.2.7.
-package main
+package RSA4096
 
 import (
 	"errors"

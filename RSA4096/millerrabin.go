@@ -7,7 +7,7 @@
 // seed" correctness bar from the design doc. This hand-rolled version uses
 // math/big ONLY for arithmetic (Exp, Mod, comparisons) -- never for
 // randomness -- and draws every witness from the seed stream.
-package main
+package RSA4096
 
 import (
 	"errors"
@@ -15,12 +15,12 @@ import (
 	"math/big"
 )
 
-// millerRabinRounds is deliberately over-provisioned (design doc §5.2 step
+// MillerRabinRounds is deliberately over-provisioned (design doc §5.2 step
 // 4 calls for 64-100 rounds). Each round independently has at most a 1-in-4
 // chance of a composite slipping through; 64 rounds pushes the false-positive
 // probability to at most 4^-64, far below any other real-world failure mode
 // in the system.
-const millerRabinRounds = 64
+const MillerRabinRounds = 64
 
 var (
 	bigOne = big.NewInt(1)
@@ -29,7 +29,7 @@ var (
 
 // generateWitness draws a fresh Miller-Rabin witness `a` in the range
 // [2, n-2] from stream, given nMinus3 = n-3 (precomputed once per candidate
-// by the caller, since it's invariant across all millerRabinRounds calls --
+// by the caller, since it's invariant across all MillerRabinRounds calls --
 // no reason to recompute the same subtraction 64 times).
 //
 // USES REJECTION SAMPLING, NOT `raw mod (n-3)` -- caught in review: a naive
@@ -82,7 +82,7 @@ func generateWitness(stream io.Reader, nMinus3 *big.Int) (*big.Int, error) {
 	}
 }
 
-// IsProbablyPrime runs millerRabinRounds independent Miller-Rabin rounds
+// IsProbablyPrime runs MillerRabinRounds independent Miller-Rabin rounds
 // against candidate, with every witness drawn from stream. Returns false the
 // instant any round proves compositeness (no wasted rounds on an obvious
 // composite); returns true only if every round agrees "no evidence of
@@ -103,7 +103,7 @@ func IsProbablyPrime(candidate *big.Int, stream io.Reader) (bool, error) {
 
 	nMinus3 := new(big.Int).Sub(candidate, big.NewInt(3))
 
-	for round := 0; round < millerRabinRounds; round++ {
+	for round := 0; round < MillerRabinRounds; round++ {
 		a, err := generateWitness(stream, nMinus3)
 		if err != nil {
 			return false, err

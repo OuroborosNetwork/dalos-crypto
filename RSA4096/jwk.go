@@ -5,7 +5,7 @@
 // AncientPantheon/constructors/Codex/packages/arweave-core during this
 // session (kty="RSA", e="AQAB", n decodes to exactly 512 bytes, address =
 // Base64URL(SHA-256(n))).
-package main
+package RSA4096
 
 import (
 	"crypto/sha256"

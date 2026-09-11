@@ -1,16 +1,27 @@
-// Package main is a scratch prototype for the deterministic-RSA-4096-from-seed
-// research effort (see /.docs/deterministic-rsa4096-from-seed.md at the repo
-// root, §5.1 and Decision Record §8.3).
+// Package RSA4096 implements deterministic RSA-4096 key generation from an
+// arbitrary DALOS seed bitstring — a real, standards-compliant, fully usable
+// RSA-4096 keypair (the format Arweave wallets require), such that the same
+// seed always regenerates the exact same keypair, byte-for-byte, forever, on
+// any machine. See /.docs/deterministic-rsa4096-from-seed.md for the full
+// design history and empirical research (Decision Record §8 and
+// Implementation Log §9), and docs/ADDING_NEW_PRIMITIVES.md for how this
+// package fits the repo's new-primitive contract.
 //
-// This file implements STEP 1 of the plan only: turning the DALOS 1600-bit
-// seed bitstring into an endless, fully deterministic stream of
-// pseudorandom-looking bytes, using the same Blake3 XOF primitive already
-// audited and shipped for the EC path (Blake3/Blake3.go, ts/src/dalos-blake3).
+// Graduated from the research/rsa4096-poc/ scratch module, where the design
+// was validated against real, independent code: arweave-core's actual
+// importKeyfile()/addressOf(), and Node's native WebCrypto RSA-PSS sign and
+// verify.
+//
+// This file implements the seed -> deterministic byte stream stage: turning
+// the DALOS 1600-bit seed bitstring into an endless, fully deterministic
+// stream of pseudorandom-looking bytes, using the same Blake3 XOF primitive
+// already audited and shipped for the EC path (Blake3/Blake3.go,
+// ts/src/dalos-blake3).
 //
 // Nothing here is a cryptographic primitive of its own — Blake3 is already
 // the trusted primitive. This is just plumbing: seed in, tap you can read
 // forever out.
-package main
+package RSA4096
 
 import (
 	"bytes"

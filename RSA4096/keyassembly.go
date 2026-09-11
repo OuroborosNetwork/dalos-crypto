@@ -10,7 +10,7 @@
 // d/p/q consistency, and the Arweave address depends only on n) -- it's
 // chosen purely to match real-world convention and to give the eventual
 // Go/TypeScript ports one unambiguous formula to agree on.
-package main
+package RSA4096
 
 import (
 	"errors"

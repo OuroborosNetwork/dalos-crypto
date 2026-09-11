@@ -32,6 +32,7 @@ package main
 import (
 	bmp "DALOS_Crypto/Bitmap"
 	el "DALOS_Crypto/Elliptic"
+	rsa4096 "DALOS_Crypto/RSA4096"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -46,6 +47,7 @@ const (
 	RNG_SEED_BITS            int64 = 0xD4105C09702 // "DALOSCRYPTO" in 0x base
 	RNG_SEED_BITMAPS         int64 = 0xB17A77      // "BITAPP" in 0x base
 	RNG_SEED_BITS_HISTORICAL int64 = 0x415CCEEDED  // "ALICE-CEEDED" — historical bitstring vectors
+	RNG_SEED_RSA4096         int64 = 0xC0DE4096    // "CODE4096" in 0x base — dedicated to RSA4096, shares nothing with the EC-path seeds above
 )
 
 // --- Vector schema -------------------------------------------------------
@@ -441,6 +443,7 @@ func main() {
 	generateGenesis()
 	generateAdversarial()
 	generateHistorical()
+	generateRSA4096()
 }
 
 func generateGenesis() {
@@ -1007,5 +1010,126 @@ func generateHistorical() {
 
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintf(os.Stderr, "  DONE. %d historical vectors written to %s\n", totalVectors, finalPath)
+	fmt.Fprintln(os.Stderr, "=============================================================")
+}
+
+// --- RSA4096 corpus --------------------------------------------------------
+//
+// RSA4096Vector captures one full seed -> RSA-4096 JWK derivation. Unlike
+// the EC vectors above, this corpus's JWK field is the exact struct type
+// the RSA4096 package itself produces (RSA4096.JWK) -- reusing the real
+// type instead of a copy keeps the corpus schema and the package's actual
+// output shape mechanically in sync; they cannot drift apart by accident.
+type RSA4096Vector struct {
+	ID              string      `json:"id"`
+	Source          string      `json:"source"` // "deterministic-rng" or "seed-words"
+	InputBitString  string      `json:"input_bitstring"`
+	InputWords      []string    `json:"input_words,omitempty"`
+	PrimeP          string      `json:"prime_p_hex"`
+	PrimeQ          string      `json:"prime_q_hex"`
+	ModulusN        string      `json:"modulus_n_hex"`
+	PrivateExponent string      `json:"private_exponent_d_hex"`
+	Dp              string      `json:"dp_hex"`
+	Dq              string      `json:"dq_hex"`
+	Qi              string      `json:"qi_hex"`
+	JWK             rsa4096.JWK `json:"jwk"`
+	Address         string      `json:"address"`
+	PAttempts       int         `json:"p_attempts"`
+	QAttempts       int         `json:"q_attempts"`
+}
+
+// RSA4096Corpus -- top-level corpus written to v2_rsa4096.json. schema_version
+// 1 (independent of the EC corpora's own version numbers, since this is a
+// wholly separate primitive per docs/ADDING_NEW_PRIMITIVES.md's naming rule).
+type RSA4096Corpus struct {
+	SchemaVersion     int             `json:"schema_version"`
+	GeneratorVersion  string          `json:"generator_version"`
+	RngSeedBits       string          `json:"rng_seed_bits"`
+	MillerRabinRounds int             `json:"miller_rabin_rounds"`
+	SmallPrimeCount   int             `json:"small_prime_count"`
+	GeneratedAtUTC    string          `json:"generated_at_utc"`
+	Host              string          `json:"host"`
+	Vectors           []RSA4096Vector `json:"rsa4096_vectors"`
+}
+
+// generateRSA4096 builds the v2_rsa4096.json corpus: two RNG-driven 1600-bit
+// seeds plus one real DALOS seed-word fixture (the same seedWordFixtures[0]
+// used by the EC bitstring-vs-seedwords vectors above), each run through
+// the full RSA4096.GenerateFromBitString pipeline.
+//
+// Deliberately few vectors (3): each full generation costs low-single-digit
+// seconds (finding two 2048-bit primes from scratch), so this corpus trades
+// vector count for keeping `go run testvectors/generator/main.go` -- which
+// CI re-runs on every push touching Go code -- fast. Three is enough to
+// exercise both seed-input paths (bitstring + seed-words) and catch any
+// regression in the deterministic pipeline; it is not trying to be a
+// statistical sample the way the 50-vector EC bitstring corpus is.
+func generateRSA4096() {
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "=============================================================")
+	fmt.Fprintln(os.Stderr, "  Generating RSA4096 corpus (deterministic seed -> Arweave JWK)...")
+
+	ellipse := el.DalosEllipse()
+	rngRSA := mrand.New(mrand.NewSource(RNG_SEED_RSA4096))
+
+	corpus := RSA4096Corpus{
+		SchemaVersion:     1,
+		GeneratorVersion:  "1.0.0",
+		RngSeedBits:       fmt.Sprintf("0x%X", RNG_SEED_RSA4096),
+		MillerRabinRounds: rsa4096.MillerRabinRounds,
+		SmallPrimeCount:   rsa4096.SmallPrimeCount,
+		GeneratedAtUTC:    time.Now().UTC().Format(time.RFC3339),
+		Host:              "StoaChain/DALOS_Crypto test-vector generator (RSA4096 v1.0.0)",
+	}
+
+	addVector := func(id, source, bits string, words []string) {
+		result, err := rsa4096.GenerateFromBitString(bits)
+		must(err, fmt.Sprintf("rsa4096 %s: GenerateFromBitString", id))
+
+		if result.Key.N.BitLen() != 4096 {
+			panic(fmt.Sprintf("rsa4096 %s: n is %d bits, want 4096", id, result.Key.N.BitLen()))
+		}
+		if len(result.Address) != 43 {
+			panic(fmt.Sprintf("rsa4096 %s: address is %d chars, want 43", id, len(result.Address)))
+		}
+		must(rsa4096.SelfCheckTextbookRSA(result.Key), fmt.Sprintf("rsa4096 %s: SelfCheckTextbookRSA", id))
+
+		corpus.Vectors = append(corpus.Vectors, RSA4096Vector{
+			ID:              id,
+			Source:          source,
+			InputBitString:  bits,
+			InputWords:      words,
+			PrimeP:          result.P.Text(16),
+			PrimeQ:          result.Q.Text(16),
+			ModulusN:        result.Key.N.Text(16),
+			PrivateExponent: result.Key.D.Text(16),
+			Dp:              result.Key.Dp.Text(16),
+			Dq:              result.Key.Dq.Text(16),
+			Qi:              result.Key.Qi.Text(16),
+			JWK:             *result.JWK,
+			Address:         result.Address,
+			PAttempts:       result.PAttempts,
+			QAttempts:       result.QAttempts,
+		})
+		fmt.Fprintf(os.Stderr, "    %s: address=%s (p_attempts=%d, q_attempts=%d)\n", id, result.Address, result.PAttempts, result.QAttempts)
+	}
+
+	addVector("rsa4096-bs-01", "deterministic-rng", randomBitString(rngRSA, int(ellipse.S)), nil)
+	addVector("rsa4096-bs-02", "deterministic-rng", randomBitString(rngRSA, int(ellipse.S)), nil)
+	addVector("rsa4096-sw-01", "seed-words", ellipse.SeedWordsToBitString(seedWordFixtures[0]), seedWordFixtures[0])
+
+	tmpPath := "testvectors/v2_rsa4096.json.tmp"
+	finalPath := "testvectors/v2_rsa4096.json"
+	out, err := os.Create(tmpPath)
+	must(err, "create v2_rsa4096.json.tmp")
+
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	must(enc.Encode(corpus), "encode RSA4096 corpus")
+	must(out.Close(), "close v2_rsa4096.json.tmp")
+	must(os.Rename(tmpPath, finalPath), "rename v2_rsa4096.json.tmp")
+
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintf(os.Stderr, "  DONE. %d RSA4096 vectors written to %s\n", len(corpus.Vectors), finalPath)
 	fmt.Fprintln(os.Stderr, "=============================================================")
 }

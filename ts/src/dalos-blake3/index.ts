@@ -63,3 +63,34 @@ export function sevenFoldBlake3(input: Uint8Array, outputBytes: number): Uint8Ar
   }
   return h;
 }
+
+/**
+ * A continuing Blake3 XOF stream: seed it once with `input`, then call
+ * `read(n)` as many times as needed to pull successive, non-overlapping
+ * chunks of deterministic pseudorandom output -- matching the Go side's
+ * `Blake3.Hasher.XOF()` (an `io.Reader`) exactly. Used by the RSA4096
+ * package (`../rsa4096/`), which needs an unbounded, seekable-forward
+ * stream to drive its prime search, not a single fixed-length digest.
+ *
+ * Verified this session: `@noble/hashes`'s `blake3.create().xof(n)` calls
+ * continue squeezing from where the previous call left off (confirmed by
+ * checking `_BLAKE3.writeInto`'s use of persistent instance state, and by
+ * a smoke test showing two chunked `.xof(16)` calls concatenate to the
+ * exact same bytes as one `blake3(input, {dkLen: 32})` call) -- so this is
+ * a thin, honest wrapper, not new cryptographic logic.
+ */
+export interface Blake3XofStream {
+  /** Returns the next `n` bytes of the stream. Never rewinds, never repeats. */
+  read(n: number): Uint8Array;
+}
+
+/** Opens a new {@link Blake3XofStream} over `input` (unkeyed Blake3). */
+export function createBlake3XofStream(input: Uint8Array): Blake3XofStream {
+  const hasher = blake3.create({});
+  hasher.update(input);
+  return {
+    read(n: number): Uint8Array {
+      return hasher.xof(n);
+    },
+  };
+}

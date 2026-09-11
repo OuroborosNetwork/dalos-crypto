@@ -26,6 +26,10 @@
     "./historical": {
       "types": "./dist/historical/index.d.ts",
       "import": "./dist/historical/index.js"
+    },
+    "./rsa4096": {
+      "types": "./dist/rsa4096/index.d.ts",
+      "import": "./dist/rsa4096/index.js"
     }
   },
   "files": [

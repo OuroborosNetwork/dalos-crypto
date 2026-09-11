@@ -1,7 +1,7 @@
 // This file implements STEP 2 of the plan: turning raw bytes pulled off the
 // seed stream (stream.go) into an actual numeric candidate worth testing for
 // primality. See /.docs/deterministic-rsa4096-from-seed.md §5.2 step 2.
-package main
+package RSA4096
 
 import (
 	"errors"
