@@ -1,0 +1,9 @@
+# `go build ./...` in a `main` package directory drops a compiled binary
+# named after the module right here -- never source, always regenerable.
+/dalos-rsa4096-poc
+
+# Generated output from `go run .` -- regenerable from dummy seeds, not
+# source of truth (the real frozen golden corpus happens at graduation,
+# see .docs/deterministic-rsa4096-from-seed.md step 10).
+/jwk.json
+/golden_vectors.json
