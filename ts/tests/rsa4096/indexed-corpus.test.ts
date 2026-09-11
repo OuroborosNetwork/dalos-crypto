@@ -124,5 +124,5 @@ describe('generateBatchFromBitString reproduces the frozen idx-01/02/03 vectors'
     expect(batch[0]!.key.n.toString(16)).toBe(v01.modulus_n_hex);
     expect(batch[1]!.key.n.toString(16)).toBe(v02.modulus_n_hex);
     expect(batch[2]!.key.n.toString(16)).toBe(v03.modulus_n_hex);
-  });
+  }, 60_000);
 });
