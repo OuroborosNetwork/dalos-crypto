@@ -37,27 +37,12 @@ const bs0001InputBitstring = "00100101110001001011110001001011000000001010011100
 // Elliptic/KeyGeneration_test.go alongside ExportPrivateKey.
 // v4.0.1 (audit cycle 2026-05-04, F-ERR-005): rewritten to assert the
 // returned error in addition to the legacy stdout breadcrumb.
-func TestExportPrivateKey_FileCreateFailure_ReturnsError(t *testing.T) {
-    // CWD-safe sandbox: run the export inside t.TempDir() so the
-    // pre-created directory at the expected filename does not pollute
-    // the repo root, and so any successful write (regression) lands in
-    // a disposable location. Go 1.19 lacks t.Chdir; use os.Chdir with
-    // a t.Cleanup-registered restore so CWD is reset even on t.Fatal.
-    originalCwd, err := os.Getwd()
-    if err != nil {
-        t.Fatalf("failed to capture original cwd: %v", err)
-    }
-    sandbox := t.TempDir()
-    if err := os.Chdir(sandbox); err != nil {
-        t.Fatalf("failed to chdir to sandbox %q: %v", sandbox, err)
-    }
-    t.Cleanup(func() { _ = os.Chdir(originalCwd) })
-
-    // Derive the public key the function would derive from the same
-    // BitString, so we can pre-compute the exact filename os.Create
-    // will target. Using el.DalosEllipse() (full curve params) is required
-    // because GenerateScalarFromBitString validates the bit length
-    // against e.S (1600 for the Genesis curve).
+// deriveCorpusFilename recomputes the exact filename ExportPrivateKey will
+// target for the bs-0001 corpus fixture -- shared by both tests below so
+// each can independently arrange a specific os.OpenFile failure mode at
+// that exact path.
+func deriveCorpusFilename(t *testing.T) (el.Ellipse, string) {
+    t.Helper()
     e := el.DalosEllipse()
     scalar, err := e.GenerateScalarFromBitString(bs0001InputBitstring)
     if err != nil {
@@ -67,27 +52,22 @@ func TestExportPrivateKey_FileCreateFailure_ReturnsError(t *testing.T) {
     if err != nil {
         t.Fatalf("ScalarToKeys rejected the derived scalar: %v", err)
     }
-    expectedFilename, err := GenerateFilenameFromPublicKey(keyPair.PUBL)
+    filename, err := GenerateFilenameFromPublicKey(keyPair.PUBL)
     if err != nil {
         t.Fatalf("GenerateFilenameFromPublicKey rejected the corpus public key %q: %v", keyPair.PUBL, err)
     }
-    if expectedFilename == "" {
+    if filename == "" {
         t.Fatalf("unexpected empty filename from corpus public key %q", keyPair.PUBL)
     }
+    return e, filename
+}
 
-    // Failure-trigger: create a directory at the exact path os.Create
-    // will target. os.Create on a path that resolves to a directory
-    // fails on every platform (POSIX: EISDIR; Windows: "Access is
-    // denied."). This forces ExportPrivateKey down the post-T1.3 print
-    // + return branch.
-    triggerPath := filepath.Join(sandbox, expectedFilename)
-    if err := os.MkdirAll(triggerPath, 0o755); err != nil {
-        t.Fatalf("failed to pre-create trigger directory at %q: %v", triggerPath, err)
-    }
-
-    // Stdout-capture: swap os.Stdout for a pipe's write end. Restore
-    // via t.Cleanup so a panic or t.Fatal inside the function under
-    // test does not leave the test runner with a closed/leaked stdout.
+// captureStdout swaps os.Stdout for a pipe's write end for the duration of
+// fn, returning everything written to it. Restores the original os.Stdout
+// via t.Cleanup so a panic or t.Fatal inside fn does not leave the test
+// runner with a closed/leaked stdout.
+func captureStdout(t *testing.T, fn func() error) (error, string) {
+    t.Helper()
     origStdout := os.Stdout
     r, w, err := os.Pipe()
     if err != nil {
@@ -96,10 +76,8 @@ func TestExportPrivateKey_FileCreateFailure_ReturnsError(t *testing.T) {
     os.Stdout = w
     t.Cleanup(func() { os.Stdout = origStdout })
 
-    // v4.0.1 (F-ERR-005): function now returns error.
-    exportErr := ExportPrivateKey(&e, bs0001InputBitstring, "test-password")
+    fnErr := fn()
 
-    // Close the write end so the read end sees EOF, then drain.
     if err := w.Close(); err != nil {
         t.Fatalf("failed to close pipe write end: %v", err)
     }
@@ -107,19 +85,124 @@ func TestExportPrivateKey_FileCreateFailure_ReturnsError(t *testing.T) {
     if _, err := io.Copy(&captured, r); err != nil {
         t.Fatalf("failed to drain pipe read end: %v", err)
     }
-    output := captured.String()
+    return fnErr, captured.String()
+}
+
+// chdirToSandbox chdirs into a fresh t.TempDir() for the duration of the
+// test (Go 1.19 lacks t.Chdir), restoring the original cwd via t.Cleanup
+// even on t.Fatal. Returns the sandbox's absolute path.
+func chdirToSandbox(t *testing.T) string {
+    t.Helper()
+    originalCwd, err := os.Getwd()
+    if err != nil {
+        t.Fatalf("failed to capture original cwd: %v", err)
+    }
+    sandbox := t.TempDir()
+    if err := os.Chdir(sandbox); err != nil {
+        t.Fatalf("failed to chdir to sandbox %q: %v", sandbox, err)
+    }
+    t.Cleanup(func() { _ = os.Chdir(originalCwd) })
+    return sandbox
+}
+
+// TestExportPrivateKey_FileCreateFailure_ReturnsError exercises the
+// GENERIC os.OpenFile failure branch (the final `return fmt.Errorf("failed
+// to create export file...")` in export.go) -- i.e. a create failure for
+// a reason OTHER than the target path already existing.
+//
+// F-LOW-014 (v4.0.3) history note: this test used to pre-create a
+// DIRECTORY at the target path to force a generic os.Create failure
+// (EISDIR). That stopped working once F-LOW-014 switched O_TRUNC -> O_EXCL:
+// on POSIX, O_EXCL|O_CREAT against ANY pre-existing path -- file or
+// directory -- fails with EEXIST, which os.IsExist() now catches FIRST and
+// routes to the "already exists" collision-protection branch (see
+// TestExportPrivateKey_CollisionProtection_RefusesToOverwrite below), never
+// reaching the generic branch this test is actually meant to cover. Fixed
+// by triggering a permission failure instead (a read-only target
+// directory), which fails at open() for a reason collision-protection
+// doesn't intercept -- the file never existed, so os.IsExist(err) is false
+// and the generic branch is what actually runs.
+func TestExportPrivateKey_FileCreateFailure_ReturnsError(t *testing.T) {
+    sandbox := chdirToSandbox(t)
+    // The exact filename doesn't matter here -- any create inside
+    // `restricted` below fails the same way -- so only `e` is needed.
+    e, _ := deriveCorpusFilename(t)
+
+    // Read-only subdirectory: os.OpenFile(..., O_CREATE|...) inside it
+    // fails with permission-denied (EACCES), not EEXIST -- the file being
+    // created has never existed, so this can't be mistaken for the
+    // collision-protection path. Chdir into it so ExportPrivateKey's
+    // relative FileName resolves inside the restricted directory.
+    restricted := filepath.Join(sandbox, "restricted")
+    if err := os.Mkdir(restricted, 0o755); err != nil {
+        t.Fatalf("failed to create %q: %v", restricted, err)
+    }
+    if err := os.Chdir(restricted); err != nil {
+        t.Fatalf("failed to chdir to %q: %v", restricted, err)
+    }
+    // 0o500: read+execute, no write. Removing write permission on the
+    // directory itself is what makes creating a NEW entry inside it fail;
+    // it does not affect a later rmdir of `restricted` by ITS parent
+    // (sandbox), which only requires write permission on sandbox, still
+    // 0o755 -- so t.TempDir()'s automatic cleanup is unaffected.
+    if err := os.Chmod(restricted, 0o500); err != nil {
+        t.Fatalf("failed to chmod %q read-only: %v", restricted, err)
+    }
+    t.Cleanup(func() { _ = os.Chmod(restricted, 0o755) }) // belt-and-braces for cleanup ordering
+
+    exportErr, output := captureStdout(t, func() error {
+        return ExportPrivateKey(&e, bs0001InputBitstring, "test-password")
+    })
 
     // Assertion 1: ExportPrivateKey returns a non-nil error.
     if exportErr == nil {
         t.Fatalf("expected non-nil error from ExportPrivateKey on file-create failure, got nil; stdout: %q", output)
     }
-    // Assertion 2: error message mentions the failing operation.
+    // Assertion 2: error message mentions the failing operation, and is
+    // NOT the collision-protection message (confirms this test actually
+    // exercises the generic branch, not F-LOW-014's).
     if !strings.Contains(exportErr.Error(), "failed to create export file") {
         t.Errorf("error message should mention 'failed to create export file'; got: %q", exportErr.Error())
+    }
+    if strings.Contains(exportErr.Error(), "F-LOW-014") {
+        t.Errorf("got the collision-protection error instead of the generic create failure -- got: %q", exportErr.Error())
     }
     // Assertion 3: legacy stdout breadcrumb still emitted for CLI compat.
     const wantSubstring = "Error: failed to create export file:"
     if !strings.Contains(output, wantSubstring) {
         t.Errorf("captured stdout missing legacy breadcrumb\n  want substring: %q\n  got: %q", wantSubstring, output)
+    }
+}
+
+// TestExportPrivateKey_CollisionProtection_RefusesToOverwrite exercises
+// the F-LOW-014 branch specifically: a pre-existing path (file OR
+// directory) at the target filename must be refused, not overwritten or
+// misreported as a generic create failure. This is the scenario the old
+// version of TestExportPrivateKey_FileCreateFailure_ReturnsError
+// accidentally started exercising once O_EXCL replaced O_TRUNC (see that
+// test's doc comment) -- pulled out into its own explicitly-named test so
+// both real failure modes stay covered on purpose, not by accident.
+func TestExportPrivateKey_CollisionProtection_RefusesToOverwrite(t *testing.T) {
+    sandbox := chdirToSandbox(t)
+    e, filename := deriveCorpusFilename(t)
+
+    triggerPath := filepath.Join(sandbox, filename)
+    if err := os.MkdirAll(triggerPath, 0o755); err != nil {
+        t.Fatalf("failed to pre-create trigger directory at %q: %v", triggerPath, err)
+    }
+
+    exportErr, output := captureStdout(t, func() error {
+        return ExportPrivateKey(&e, bs0001InputBitstring, "test-password")
+    })
+
+    if exportErr == nil {
+        t.Fatalf("expected non-nil error when the target path already exists, got nil; stdout: %q", output)
+    }
+    if !strings.Contains(exportErr.Error(), "F-LOW-014") || !strings.Contains(exportErr.Error(), "already exists") {
+        t.Errorf("expected the F-LOW-014 collision-protection error; got: %q", exportErr.Error())
+    }
+    const wantSubstring = "already exists — refusing to overwrite (F-LOW-014 collision protection)"
+    if !strings.Contains(output, wantSubstring) {
+        t.Errorf("captured stdout missing collision-protection breadcrumb\n  want substring: %q\n  got: %q", wantSubstring, output)
     }
 }
