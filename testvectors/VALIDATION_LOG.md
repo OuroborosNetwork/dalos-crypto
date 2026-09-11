@@ -6,7 +6,29 @@ This file captures the verbatim output of the Go validation suite against the DA
 
 ---
 
-## Run — 2026-09-11, latest (indexed/batch RSA4096 generation: one seed, many Arweave addresses)
+## Run — 2026-09-11, latest (multi-range RSA4096 generation: arbitrary index-range lists, index 0 always included)
+
+### What changed
+
+Added `RSA4096/ranges.go` (`GenerateFromBitStringAtRanges`, `collectSortedUniqueIndices`) and its TS mirror `ts/src/rsa4096/ranges.ts` (`generateFromBitStringAtRanges`/`generateFromBitStringAtRangesAsync`) — generalizes `GenerateBatchFromBitString`'s single contiguous range to an arbitrary LIST of inclusive `{Start, End}` ranges (e.g. `1-100`, `134-167`, `234-777`), deduplicated, sorted ascending, with index 0 always included regardless of whether any range covers it. Deliberately a separate function from `GenerateBatchFromBitString` — that function's contract is unchanged. No new frozen corpus: pure orchestration over `GenerateFromBitStringAtIndex`, so `testvectors/v3_rsa4096_indexed.json`'s existing `rsa4096-idx-01/02/03` vectors serve as the frozen cross-check here too.
+
+### Checks
+
+| Check | Result |
+|-------|--------|
+| `v1_genesis.json` / `v1_historical.json` / `v1_adversarial.json` / `v2_rsa4096.json` / `v3_rsa4096_indexed.json` byte-identity (extended-elided) | ✅ UNCHANGED — this feature adds no new corpus and touches no existing generation path |
+| `go test ./...` | ✅ PASS, all packages — 10 new tests in `ranges_test.go`, including a dedicated `math.MaxUint32`-boundary loop-termination check |
+| `npm test` (TS) | ✅ 490/490 passing (up from 479) — 10 new in `ranges.test.ts`, plus 1 new frozen-corpus cross-check describe block in `indexed-corpus.test.ts` (9 tests total in that file now) |
+| `npm run lint` / `npm run typecheck` / `npm run docs:check` | ✅ PASS (13/13 README code blocks, including the new ranges example) |
+| Direct Go↔TS cross-check (not corpus-mediated) | ✅ Same seed, overlapping out-of-order ranges `[{1,3},{10,10},{2,4}]`: 6 byte-identical addresses in both languages, verified side-by-side in a scratch script — proves both deduplication and sort-order correctness simultaneously |
+
+### What this run proves
+
+Multi-range generation is safe orchestration, not a new derivation: reusing `rsa4096-idx-01/02/03` as the frozen cross-check (rather than minting a fourth corpus file) is only valid because the underlying per-index seed derivation is byte-for-byte the same call already proven in the prior run below — this run's job is to prove the range-flattening/dedup/sort logic on top of that, which the overlapping out-of-order Go↔TS cross-check demonstrates directly, and the `math.MaxUint32`-boundary test demonstrates the loop can't be tricked into wrapping/hanging at the edge of the index space.
+
+---
+
+## Run — 2026-09-11, earlier the same day (indexed/batch RSA4096 generation: one seed, many Arweave addresses)
 
 ### What changed
 

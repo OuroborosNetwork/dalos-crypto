@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import {
   generateBatchFromBitStringAsync,
   generateFromBitStringAtIndex,
+  generateFromBitStringAtRangesAsync,
   selfCheckTextbookRSA,
 } from '../../src/rsa4096/index.js';
 
@@ -124,5 +125,32 @@ describe('generateBatchFromBitString reproduces the frozen idx-01/02/03 vectors'
     expect(batch[0]!.key.n.toString(16)).toBe(v01.modulus_n_hex);
     expect(batch[1]!.key.n.toString(16)).toBe(v02.modulus_n_hex);
     expect(batch[2]!.key.n.toString(16)).toBe(v03.modulus_n_hex);
+  }, 60_000);
+});
+
+describe('generateFromBitStringAtRanges reproduces the frozen idx-01/02/03 vectors', () => {
+  // Same reasoning as the batch cross-check above: ranges is pure
+  // orchestration over indexed generation too (a different way of
+  // choosing indices, not a new derivation), so no separate frozen
+  // corpus was created for it -- these three existing vectors are the
+  // frozen proof for ranges as well as for indexed generation and batch.
+  it('ranges [{0,1},{2,2}] matches rsa4096-idx-01/02/03 exactly (0 implicit, 1-2 explicit)', async () => {
+    const corpus = loadCorpus();
+    const v01 = corpus.rsa4096_indexed_vectors.find((v) => v.id === 'rsa4096-idx-01')!;
+    const v02 = corpus.rsa4096_indexed_vectors.find((v) => v.id === 'rsa4096-idx-02')!;
+    const v03 = corpus.rsa4096_indexed_vectors.find((v) => v.id === 'rsa4096-idx-03')!;
+
+    // Deliberately request only {1,1} and {2,2} explicitly -- index 0
+    // must still appear first via the always-include-0 rule, exactly
+    // matching rsa4096-idx-01.
+    const results = await generateFromBitStringAtRangesAsync(v01.input_bitstring, [
+      { start: 1, end: 1 },
+      { start: 2, end: 2 },
+    ]);
+
+    expect(results.length).toBe(3);
+    expect(results[0]!.address).toBe(v01.address);
+    expect(results[1]!.address).toBe(v02.address);
+    expect(results[2]!.address).toBe(v03.address);
   }, 60_000);
 });

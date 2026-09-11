@@ -352,6 +352,39 @@ carries `.completed` — the results already finished before the failure —
 so a caller never has to discard already-completed, multi-second-cost
 work just because a later index failed.
 
+For an arbitrary LIST of ranges — not just one contiguous
+`startIndex..startIndex+count-1` block —
+`generateFromBitStringAtRangesAsync` generalizes the batch API: give it
+`1-100`, `134-167`, `234-777` and it deterministically generates the
+union of all three, deduplicated and sorted ascending. Index `0` is
+**always** included, even if none of your ranges cover it:
+
+```ts
+import {
+  generateFromBitStringAtRangesAsync,
+  type IndexRange,
+} from "@ouronet/dalos-crypto/rsa4096";
+
+const bits1600 = "1".repeat(800) + "0".repeat(800);
+
+const ranges: IndexRange[] = [
+  { start: 1, end: 100 },
+  { start: 134, end: 167 },
+  { start: 234, end: 777 },
+];
+
+const addresses = await generateFromBitStringAtRangesAsync(bits1600, ranges);
+console.log(addresses.length); // 1 (index 0, always included) + 100 + 34 + 544 = 679
+console.log(addresses[0]!.address); // index 0's address, first, deterministically
+```
+
+It's a separate function from `generateBatchFromBitStringAsync`, not a
+modification of it — that function's exact contract (precisely
+`[startIndex, startIndex+count-1]`, no implicit index 0 unless it's
+already in range) is already published and unchanged for existing
+callers. Same `BatchProgressEvent`/`onResult`/`BatchGenerationError`
+vocabulary as the batch API above — no new types to learn.
+
 ---
 
 ## Quick start

@@ -16,6 +16,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [4.4.0] — 2026-09-11
+
+**New feature: generate from an arbitrary LIST of index ranges in one deterministic call, with index 0 always included.**
+
+Direct follow-up to `4.3.0`'s indexed/batch generation. `GenerateBatchFromBitString`
+only ever covers one contiguous `startIndex..startIndex+count-1` block. Real
+usage wants more: "give me 1-100, plus 134-167, plus 234-777" — several
+non-contiguous ranges in one deterministic call, always including the
+seed's primary (index 0) address whether or not any given range covers it.
+
+**`RSA4096/ranges.go`'s `GenerateFromBitStringAtRanges(seed, ranges []IndexRange,
+onProgress, onResult)` / `ts/src/rsa4096/ranges.ts`'s `generateFromBitStringAtRanges`/
+`generateFromBitStringAtRangesAsync`** accept a list of inclusive
+`{Start, End}` ranges, flatten their union, deduplicate, sort ascending,
+and **always** prepend index 0 regardless of whether any range covers it.
+Deliberately a separate function from `GenerateBatchFromBitString`, not a
+modification of it — that function's exact published contract (precisely
+`[startIndex, startIndex+count-1]`, no implicit index 0 unless it's
+already in range) is unchanged for existing callers. Reuses the same
+`BatchProgressEvent`/progress-and-result-callback vocabulary as the batch
+API — no new types to learn, same combined 0..1 progress readout and
+partial-failure semantics (completed results returned/thrown alongside
+the error, never discarded).
+
+A subtle Go-side edge case handled deliberately: a range ending at
+`math.MaxUint32` must not wrap the loop counter back to 0 on increment —
+`collectSortedUniqueIndices` checks `idx == r.End` *before* incrementing,
+so the loop terminates correctly even at the very top of the `uint32`
+range (dedicated test: `TestCollectSortedUniqueIndices_HandlesMaxUint32EndWithoutHanging`).
+
+No new frozen corpus: ranges is pure orchestration over
+`GenerateFromBitStringAtIndex`, exactly like batching is, so
+`testvectors/v3_rsa4096_indexed.json`'s existing `rsa4096-idx-01/02/03`
+vectors serve as the frozen cross-check for ranges too (see
+`ts/tests/rsa4096/indexed-corpus.test.ts`). Cross-language byte-identity
+also confirmed directly via overlapping, out-of-order ranges
+(`[{1,3},{10,10},{2,4}]` on an identical seed) to prove both
+deduplication and sort-order correctness simultaneously — 6 byte-identical
+addresses in both Go and TypeScript.
+
+**490 tests pass** in TS (up from 479); 10 new Go tests in `ranges_test.go`.
+
+---
+
 ## [4.3.0] — 2026-09-11
 
 **New feature: one seed now produces MANY independent Arweave addresses, not just one.**

@@ -57,3 +57,8 @@ export {
   BatchGenerationError,
 } from './batch.js';
 export type { BatchProgressEvent, BatchProgressCallback, BatchResultCallback } from './batch.js';
+export {
+  generateFromBitStringAtRanges,
+  generateFromBitStringAtRangesAsync,
+} from './ranges.js';
+export type { IndexRange } from './ranges.js';
