@@ -82,6 +82,8 @@ export function selfCheckEd25519(r: ChainwebKeyGenResult): void {
   const message = new TextEncoder().encode('DALOS_Crypto Chainweb Stoic-path self-check');
   const sig = ed25519.sign(message, r.privateKey);
   if (!ed25519.verify(sig, message, r.publicKey)) {
-    throw new Error('Chainweb: self-check FAILED -- signature did not verify under the derived public key');
+    throw new Error(
+      'Chainweb: self-check FAILED -- signature did not verify under the derived public key',
+    );
   }
 }

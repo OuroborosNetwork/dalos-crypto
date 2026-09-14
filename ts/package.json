@@ -1,6 +1,6 @@
 {
   "name": "@ouronet/dalos-crypto",
-  "version": "4.5.0",
+  "version": "4.5.1",
   "description": "DALOS Cryptography — Ouronet's custom 1606-bit Twisted Edwards curve, Schnorr signatures, bitmap key generation, and deterministic RSA-4096 key generation for Arweave from a custom seed phrase. TypeScript port of the Genesis Go reference.",
   "type": "module",
   "main": "./dist/index.js",

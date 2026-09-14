@@ -16,6 +16,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [4.5.1] — 2026-09-14
+
+**Patch: fix a Biome formatting violation in `chainweb/keygen.ts` that blocked CI publish.**
+
+`v4.5.0`'s tag (`ts-v4.5.0`) was pushed, but the publish workflow's Lint
+gate failed on a single line-length formatting rule in
+`selfCheckEd25519`'s error message before ever reaching Test/Build/publish
+— caught locally too late, since `lint` wasn't run as part of local
+verification before tagging (typecheck/build/test all were). No functional
+change: `biome check --write` reformatted the one offending line, nothing
+else. `ts-v4.5.0` is left as a dead tag (never published to npm — the
+workflow failed before the publish step ran); `4.5.1` is the real first
+published version of the Chainweb/Stoic-path work.
+
+---
+
 ## [4.5.0] — 2026-09-14
 
 **New primitive: the "Stoic path" — deterministic Ed25519 key generation for Kadena/Chainweb `k:` accounts from a DALOS seed bitstring.**
