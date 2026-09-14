@@ -98,7 +98,7 @@ jobs:
           # files — it compares elided SHA-256s — but a per-line diff
           # is what a human needs to debug a failure.)
           mkdir -p /tmp/corpus-snapshot
-          for F in testvectors/v1_genesis.json testvectors/v1_historical.json testvectors/v1_adversarial.json testvectors/v2_rsa4096.json testvectors/v3_rsa4096_indexed.json; do
+          for F in testvectors/v1_genesis.json testvectors/v1_historical.json testvectors/v1_adversarial.json testvectors/v2_rsa4096.json testvectors/v3_rsa4096_indexed.json testvectors/v4_chainweb_ed25519.json; do
             cp "$F" "/tmp/corpus-snapshot/$(basename $F).committed"
           done
 
@@ -136,6 +136,17 @@ jobs:
             # is pure orchestration over indexed generation, not a
             # separate derivation).
             ["testvectors/v3_rsa4096_indexed.json"]="2317df5f9ba729b97171949e546a8b35c4ace5759b078b054ccc6a17a18708b0"
+            # New corpus, frozen 2026-09-14: locks in the Chainweb/Stoic-
+            # path feature (Chainweb/stream.go, Chainweb/keygen.go) --
+            # deterministic Ed25519 key generation for Kadena/Chainweb
+            # `k:` accounts from a DALOS seed bitstring. 6 vectors mirror
+            # v3_rsa4096_indexed.json's coverage shape: cw-01/02/03 share
+            # one 1600-bit (DALOS) seed at indices 0/1/2, cw-04/05 share
+            # one 1024-bit (APOLLO) seed at indices 0/7, cw-06 is
+            # seed-words-derived at a non-zero index. Cross-verified
+            # byte-identical against the TypeScript port (@noble/curves)
+            # before freezing -- see ts/tests/chainweb/chainweb-corpus.test.ts.
+            ["testvectors/v4_chainweb_ed25519.json"]="7696c93e8bbc241f3340e24b75e109d2e718d3ea72e658ac354e62e733794594"
           )
 
           FAILED=0

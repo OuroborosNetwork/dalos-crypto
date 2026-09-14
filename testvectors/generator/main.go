@@ -31,6 +31,7 @@ package main
 
 import (
 	bmp "DALOS_Crypto/Bitmap"
+	chainweb "DALOS_Crypto/Chainweb"
 	el "DALOS_Crypto/Elliptic"
 	rsa4096 "DALOS_Crypto/RSA4096"
 	"encoding/json"
@@ -49,6 +50,7 @@ const (
 	RNG_SEED_BITS_HISTORICAL int64 = 0x415CCEEDED  // "ALICE-CEEDED" — historical bitstring vectors
 	RNG_SEED_RSA4096         int64 = 0xC0DE4096    // "CODE4096" in 0x base — dedicated to RSA4096, shares nothing with the EC-path seeds above
 	RNG_SEED_RSA4096_INDEXED int64 = 0xC0DE4096001 // dedicated to the indexed/batch corpus (v3_rsa4096_indexed.json) — independent of RNG_SEED_RSA4096 so neither corpus's regeneration can perturb the other's RNG stream position
+	RNG_SEED_CHAINWEB        int64 = 0x570101C     // "STOIC" (leetspeak-ish) in 0x base — dedicated to the Chainweb/Stoic-path corpus (v4_chainweb_ed25519.json), independent of every other RNG seed above
 )
 
 // --- Vector schema -------------------------------------------------------
@@ -458,6 +460,7 @@ func main() {
 	generateHistorical()
 	generateRSA4096()
 	generateRSA4096Indexed()
+	generateChainweb()
 }
 
 func generateGenesis() {
@@ -1292,5 +1295,120 @@ func generateRSA4096Indexed() {
 
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintf(os.Stderr, "  DONE. %d RSA4096 indexed vectors written to %s\n", len(corpus.Vectors), finalPath)
+	fmt.Fprintln(os.Stderr, "=============================================================")
+}
+
+// --- Chainweb / Stoic-path corpus -------------------------------------------
+//
+// ChainwebVector -- one seed(+index) -> Ed25519 keypair -> Chainweb k:
+// address derivation, locking in the Chainweb/ package (see its own doc
+// comment for the full design: same DALOS 1600/1024-bit seed bitstring
+// the EC identity and RSA4096/Arweave paths already consume, domain-
+// separated via Blake3 with a brand-new tag, fed into standard-library
+// crypto/ed25519 -- "the Stoic path").
+type ChainwebVector struct {
+	ID         string   `json:"id"`
+	Source     string   `json:"source"` // "deterministic-rng" or "seed-words"
+	InputBits  string   `json:"input_bitstring"`
+	InputWords []string `json:"input_words,omitempty"`
+	Index      uint32   `json:"index"`
+	PrivateKey string   `json:"private_key_hex"` // 32-byte Ed25519 seed, RFC 8032
+	PublicKey  string   `json:"public_key_hex"`
+	Address    string   `json:"address"` // "k:" + PublicKey, lowercase hex
+}
+
+// ChainwebCorpus -- top-level corpus written to v4_chainweb_ed25519.json.
+type ChainwebCorpus struct {
+	SchemaVersion    int              `json:"schema_version"`
+	GeneratorVersion string           `json:"generator_version"`
+	RngSeedBits      string           `json:"rng_seed_bits"`
+	GeneratedAtUTC   string           `json:"generated_at_utc"`
+	Host             string           `json:"host"`
+	Vectors          []ChainwebVector `json:"chainweb_vectors"`
+}
+
+// generateChainweb builds v4_chainweb_ed25519.json: locks in the Stoic
+// path (Chainweb/) against a frozen corpus. Coverage mirrors
+// generateRSA4096Indexed's shape deliberately, for the same reasons:
+//   - cw-01/02/03 share ONE 1600-bit (DALOS-shaped) seed at indices
+//     0, 1, 2 -- cw-01 alone locks in the single most safety-critical
+//     property this feature has (GenerateFromBitString and
+//     GenerateFromBitStringAtIndex(seed, 0) must be byte-identical --
+//     see Chainweb/keygen.go), and 01/02/03 together prove indices are
+//     genuinely independent (no two share a private key, public key, or
+//     address).
+//   - cw-04/05 share ONE 1024-bit (APOLLO-shaped) seed at indices 0 and
+//     7 -- covers the other blessed length plus a non-consecutive index,
+//     proving "any index directly reachable" without needing 0..6 first.
+//   - cw-06 is a seed-words-derived 1600-bit seed (the same
+//     seedWordFixtures[0] used elsewhere in this file) at a non-zero
+//     index -- covers seed-word provenance combined with indexing, i.e.
+//     the actual real-world "type your seed words, get a Chainweb
+//     address" path end to end.
+func generateChainweb() {
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "=============================================================")
+	fmt.Fprintln(os.Stderr, "  Generating Chainweb/Stoic-path corpus (deterministic seed -> Ed25519 k: address)...")
+
+	dalosEllipse := el.DalosEllipse()
+	apolloEllipse := el.ApolloEllipse()
+	rngChainweb := mrand.New(mrand.NewSource(RNG_SEED_CHAINWEB))
+
+	corpus := ChainwebCorpus{
+		SchemaVersion:    1,
+		GeneratorVersion: "1.0.0",
+		RngSeedBits:      fmt.Sprintf("0x%X", RNG_SEED_CHAINWEB),
+		GeneratedAtUTC:   time.Now().UTC().Format(time.RFC3339),
+		Host:             "StoaChain/DALOS_Crypto test-vector generator (Chainweb v1.0.0)",
+	}
+
+	addVector := func(id, source, bits string, words []string, index uint32) {
+		result, err := chainweb.GenerateFromBitStringAtIndex(bits, index)
+		must(err, fmt.Sprintf("chainweb %s: GenerateFromBitStringAtIndex", id))
+
+		if len(result.Address) != 66 { // "k:" + 64 hex chars
+			panic(fmt.Sprintf("chainweb %s: address is %d chars, want 66", id, len(result.Address)))
+		}
+		must(chainweb.SelfCheckEd25519(result), fmt.Sprintf("chainweb %s: SelfCheckEd25519", id))
+
+		corpus.Vectors = append(corpus.Vectors, ChainwebVector{
+			ID:         id,
+			Source:     source,
+			InputBits:  bits,
+			InputWords: words,
+			Index:      index,
+			PrivateKey: fmt.Sprintf("%x", result.PrivateKey),
+			PublicKey:  fmt.Sprintf("%x", result.PublicKey),
+			Address:    result.Address,
+		})
+		fmt.Fprintf(os.Stderr, "    %s: index=%d address=%s\n", id, index, result.Address)
+	}
+
+	dalosSeed := randomBitString(rngChainweb, int(dalosEllipse.S))
+	addVector("cw-01", "deterministic-rng", dalosSeed, nil, 0)
+	addVector("cw-02", "deterministic-rng", dalosSeed, nil, 1)
+	addVector("cw-03", "deterministic-rng", dalosSeed, nil, 2)
+
+	apolloSeed := randomBitString(rngChainweb, int(apolloEllipse.S))
+	addVector("cw-04", "deterministic-rng", apolloSeed, nil, 0)
+	addVector("cw-05", "deterministic-rng", apolloSeed, nil, 7)
+
+	cwSwBits, err := dalosEllipse.SeedWordsToBitString(seedWordFixtures[0])
+	must(err, "cw-06: SeedWordsToBitString")
+	addVector("cw-06", "seed-words", cwSwBits, seedWordFixtures[0], 3)
+
+	tmpPath := "testvectors/v4_chainweb_ed25519.json.tmp"
+	finalPath := "testvectors/v4_chainweb_ed25519.json"
+	out, err := os.Create(tmpPath)
+	must(err, "create v4_chainweb_ed25519.json.tmp")
+
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	must(enc.Encode(corpus), "encode Chainweb corpus")
+	must(out.Close(), "close v4_chainweb_ed25519.json.tmp")
+	must(os.Rename(tmpPath, finalPath), "rename v4_chainweb_ed25519.json.tmp")
+
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintf(os.Stderr, "  DONE. %d Chainweb vectors written to %s\n", len(corpus.Vectors), finalPath)
 	fmt.Fprintln(os.Stderr, "=============================================================")
 }

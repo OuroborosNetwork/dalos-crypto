@@ -4,7 +4,7 @@
   "rng_seed_bits": "0xC0DE4096",
   "miller_rabin_rounds": 100,
   "small_prime_count": 2000,
-  "generated_at_utc": "2026-09-11T11:41:05Z",
+  "generated_at_utc": "2026-09-14T14:10:45Z",
   "host": "StoaChain/DALOS_Crypto test-vector generator (RSA4096 v1.0.0)",
   "rsa4096_vectors": [
     {

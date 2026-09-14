@@ -16,6 +16,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 
 ---
 
+## [4.5.0] — 2026-09-14
+
+**New primitive: the "Stoic path" — deterministic Ed25519 key generation for Kadena/Chainweb `k:` accounts from a DALOS seed bitstring.**
+
+The same 1600/1024-bit seed bitstring that already produces a DALOS Genesis
+EC identity and (via `rsa4096`) an Arweave address now ALSO produces real,
+standards-compliant, spendable Chainweb accounts — no separate Kadena-style
+mnemonic required. A completely different algebraic structure from Gen-1
+(Ed25519, not DALOS's custom Edwards curve), so — like `rsa4096` — it is not
+registered in the `registry` `CryptographicPrimitive` interface.
+
+**Go: new `Chainweb/` package** (`GenerateFromBitString`,
+`GenerateFromBitStringAtIndex`, `SelfCheckEd25519`) — built on stdlib
+`crypto/ed25519` only, so `go.mod`'s "zero external dependencies" invariant
+is preserved. **TypeScript: new `@ouronet/dalos-crypto/chainweb` subpath**,
+built on `@noble/curves` (new dependency, same trust tier as the existing
+`@noble/hashes`).
+
+Architecture mirrors `RSA4096/indexed.go` deliberately: a domain-separated
+Blake3 stream (`DALOS-gen1/ChainwebEd25519Stream/v1`, distinct from every
+other DALOS derivation — cannot collide with or leak anything about the EC
+keypair or the RSA4096/Arweave stream sharing the same seed), with the
+position index folded directly into the same hash rather than requiring a
+second index-derivation step — simpler than RSA4096's version, since this
+is a brand-new primitive with no prior published index-0 output to
+preserve byte-identically. Any index directly reachable without generating
+the ones before it — infinitely many independent Chainweb accounts per
+seed, same design principle as RSA4096's indexed/batch/ranges generation.
+
+The one non-negotiable step: the Chainweb `k:` account address format
+(`"k:" + lowercase-hex(publicKey)`) is fixed by Pact/Chainweb's own
+protocol convention, not a design choice this package makes — verified
+directly against real derived accounts (both this repo's own Kadena
+wallet-compatibility research and an independent third-party tool) before
+implementation.
+
+New frozen corpus `testvectors/v4_chainweb_ed25519.json` (6 vectors,
+coverage shape mirrors `v3_rsa4096_indexed.json`: 3 vectors share one
+1600-bit DALOS seed at indices 0/1/2, 2 share one 1024-bit APOLLO seed at
+indices 0/7, 1 is seed-words-derived at a non-zero index). Cross-language
+byte-identity confirmed: private key, public key, and address all match
+exactly between Go and TypeScript for every vector.
+
+See `docs/CHAINWEB_STOIC_PATH.md` for the full design.
+
+---
+
 ## [4.4.0] — 2026-09-11
 
 **New feature: generate from an arbitrary LIST of index ranges in one deterministic call, with index 0 always included.**

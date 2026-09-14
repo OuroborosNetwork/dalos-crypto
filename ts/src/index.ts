@@ -47,3 +47,14 @@ export * as blake3 from './dalos-blake3/index.js';
 // docs/ADDING_NEW_PRIMITIVES.md Step 8 and
 // /.docs/deterministic-rsa4096-from-seed.md for the reasoning.
 export * as rsa4096 from './rsa4096/index.js';
+
+// Re-export the chainweb subpath at the top level for discoverability.
+// Canonical import path is still `@ouronet/dalos-crypto/chainweb`. The
+// "Stoic path": deterministic Ed25519 key generation for Kadena/Chainweb
+// `k:` accounts from the same DALOS seed bitstring that produces the EC
+// identity and (via rsa4096) an Arweave address -- a completely different
+// algebraic structure from Gen-1 (Ed25519, not DALOS's custom Edwards
+// curve), so like rsa4096 it is NOT registered in the `registry`
+// CryptographicPrimitive interface either. See
+// docs/ADDING_NEW_PRIMITIVES.md Step 8.
+export * as chainweb from './chainweb/index.js';
